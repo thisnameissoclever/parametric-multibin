@@ -90,8 +90,21 @@ thr_steps = 32;                  // facets per turn (chord error under 0.02 mm)
 hole_top  = 5.2;
 hole_cone = 3.8;                 // entry cone radius at z = 0 (45 degrees)
 
-nx_cells = ceil(NX - eps);
-ny_cells = ceil(NY - eps);
+// Cells along each axis as [centre, width]: whole 50 mm cells from the origin,
+// then one 25 mm cell when the size ends in a half LU. MultiBuild publishes no
+// half-LU widths, so the half cell is this generator's own rule: a narrower pad
+// with the holes that fall on the 25 mm grid, and no rail channel, catch slots
+// or clip pockets, which do not fit in it.
+nxf = floor(NX + eps);
+nyf = floor(NY + eps);
+cols = concat([for (i = [0:1:nxf - 1]) [U * i, U]], NX - nxf > eps ? [[U * nxf - U/4, U/2]] : []);
+rows = concat([for (j = [0:1:nyf - 1]) [U * j, U]], NY - nyf > eps ? [[U * nyf - U/4, U/2]] : []);
+nx_cells = len(cols);
+ny_cells = len(rows);
+// positions of the seams between neighbouring cells along each axis
+function seams(cells) = [for (k = [0:1:len(cells) - 2]) cells[k][0] + cells[k][1] / 2];
+// half length of the flat part of a pad side, for a cell of width w
+function pad_flat(w) = w / 2 - pad_in - pad_c;
 
 // ------------------------------------------------------------------ helpers
 
@@ -155,14 +168,15 @@ module foot_halfspace(ang, d0, inset, z_full)
         polygon([[-2000, -2], [d0 - inset, -2], [d0 - inset, z_full - inset],
                  [d0, z_full], [d0, foot_z + 1], [-2000, foot_z + 1]]);
 
-module cell_pad(cx, cy) {
-    h = U/2 - pad_in;            // 21.8
+module cell_pad(cx, cy, wx = U, wy = U) {
+    hx = wx / 2 - pad_in;        // 21.8 for a whole cell
+    hy = wy / 2 - pad_in;
     intersection() {
-        foot_block(cx - U/2, cx + U/2, cy - U/2, cy + U/2);
+        foot_block(cx - wx / 2, cx + wx / 2, cy - wy / 2, cy + wy / 2);
         union() {
             // 0.4 mm chamfer on the bottom edge
-            oct_loft(oct_in(cx - h, cx + h, cy - h, cy + h, pad_c, 0.4),
-                     octagon(cx - h, cx + h, cy - h, cy + h, pad_c), 0, 0.4);
+            oct_loft(oct_in(cx - hx, cx + hx, cy - hy, cy + hy, pad_c, 0.4),
+                     octagon(cx - hx, cx + hx, cy - hy, cy + hy, pad_c), 0, 0.4);
             translate([cx - U, cy - U, 0.4 - eps]) cube([2 * U, 2 * U, foot_z]);
         }
     }
@@ -181,12 +195,12 @@ module floor_slab()
                 // whole length of the seams between rows (through the crossings)
                 difference() {
                     translate([X0, Y0, bridge_lo]) cube([X1 - X0, Y1 - Y0, bridge_z - bridge_lo + eps]);
-                    fl = U/2 - pad_in - pad_c;                     // flat half length, 16.352
-                    for (i = [0:1:nx_cells - 2], j = [0:ny_cells - 1])
-                        translate([U * i + U/2, U * j, 0]) rotate([0, 0, 90]) seam_gap(2 * fl);
-                    for (j = [0:1:ny_cells - 2])
-                        translate([(U * (nx_cells - 1)) / 2, U * j + U/2, 0])
-                            seam_gap(U * (nx_cells - 1) + 2 * fl);
+                    for (sx = seams(cols), r = rows)
+                        translate([sx, r[0], 0]) rotate([0, 0, 90]) seam_gap(2 * pad_flat(r[1]));
+                    x0 = cols[0][0] - pad_flat(cols[0][1]);
+                    x1 = cols[nx_cells - 1][0] + pad_flat(cols[nx_cells - 1][1]);
+                    for (sy = seams(rows))
+                        translate([(x0 + x1) / 2, sy, 0]) seam_gap(x1 - x0);
                 }
             }
         }
@@ -194,10 +208,10 @@ module floor_slab()
     }
 
 module channels_low()
-    for (f = [["front", front_wall, nx_cells], ["back", back_wall, nx_cells],
-              ["left", left_wall, ny_cells], ["right", right_wall, ny_cells]])
+    for (f = [["front", front_wall, nxf], ["back", back_wall, nxf],
+              ["left", left_wall, nyf], ["right", right_wall, nyf]])
         if (f[1] != "simple")
-            for (k = [0:f[2] - 1])
+            for (k = [0:1:f[2] - 1])
                 place_on_face(f[0], U * k) channel_low();
 
 // the gap between two pads' 45-degree faces near the floor underside, centred on
@@ -310,10 +324,10 @@ module place_on_face(side, s) {
 }
 
 module channels() {
-    for (f = [["front", front_wall, nx_cells], ["back", back_wall, nx_cells],
-              ["left", left_wall, ny_cells], ["right", right_wall, ny_cells]])
+    for (f = [["front", front_wall, nxf], ["back", back_wall, nxf],
+              ["left", left_wall, nyf], ["right", right_wall, nyf]])
         if (f[1] != "simple")
-            for (k = [0:f[2] - 1])
+            for (k = [0:1:f[2] - 1])
                 place_on_face(f[0], U * k) channel_cutter(f[1]);
 }
 
@@ -359,9 +373,11 @@ module inner_recesses() {
     // two coincide when the depth is a whole number of LU
     zbands = concat([for (k = [1:1:floor(NZ + eps)]) 5 + U * k],
                     abs(NZ - floor(NZ + eps)) > eps ? [ZT] : []);
-    for (f = [["front", nx_cells, front_wall], ["back", nx_cells, back_wall],
-              ["left", ny_cells, left_wall], ["right", ny_cells, right_wall]]) {
-        for (k = [0:f[1] - 1]) place_inner(f[0], U * k) for (m = [0, 1]) mirror([m, 0, 0]) {
+    for (f = [["front", nxf, front_wall, cols, (X0 + X1) / 2, X1 - X0],
+              ["back", nxf, back_wall, cols, (X0 + X1) / 2, X1 - X0],
+              ["left", nyf, left_wall, rows, (Y0 + Y1) / 2, Y1 - Y0],
+              ["right", nyf, right_wall, rows, (Y0 + Y1) / 2, Y1 - Y0]]) {
+        for (k = [0:1:f[1] - 1]) place_inner(f[0], U * k) for (m = [0, 1]) mirror([m, 0, 0]) {
             catch_slot(catch_z0);
             for (zb = zbands) catch_slot(zb - catch_up);
             // a wall with an open rail top only has short recesses at the rim
@@ -369,14 +385,13 @@ module inner_recesses() {
         }
         // seam grooves between LUs along the face, one per 50 mm band (a partial
         // top band included), each ending 7 mm below the top of its band
-        for (k = [0:1:f[1] - 2]) place_inner(f[0], U * k + U/2)
+        for (sk = seams(f[3])) place_inner(f[0], sk)
             for (b = [0:1:ceil(NZ - eps) - 1])
                 seam_groove(catch_z0 + U * b, min(U * (b + 1) + 5, ZT) - 7);
         // a topped rail wall has a groove along its whole inner face at the rim
         // (placed at the face centre: the back and left face frames run backwards)
-        if (f[2] == "topped") place_inner(f[0], U * (f[1] - 1) / 2)
-            wall_recess(ZT - groove_up, -(U * (f[1] - 1) / 2 + U/2 - wall - c_in),
-                        U * (f[1] - 1) / 2 + U/2 - wall - c_in);
+        if (f[2] == "topped") place_inner(f[0], f[4])
+            wall_recess(ZT - groove_up, -(f[5] / 2 - wall - c_in), f[5] / 2 - wall - c_in);
     }
 }
 
@@ -423,8 +438,8 @@ module corner_slots()
     }
 
 module seam_slots() {
-    for (f = [["front", nx_cells], ["back", nx_cells], ["left", ny_cells], ["right", ny_cells]])
-        for (k = [0:1:f[1] - 2]) place_on_face(f[0], U * k + U/2)
+    for (f = [["front", cols], ["back", cols], ["left", rows], ["right", rows]])
+        for (sk = seams(f[1])) place_on_face(f[0], sk)
             for (zc = [27:25:ZT - 1]) seam_slot(zc);
 }
 
@@ -481,26 +496,26 @@ module corner_pocket() {
     }
 }
 
-// pyramid notch under the middle of a pad side (+y side of a pad at the origin):
-// y - z >= 19.5 and y -+ x - sqrt(2) z >= 17.222
-module edge_notch() {
-    h = U/2 - pad_in;
+// pyramid notch under the middle of a pad side whose face is h from the pad
+// centre (built for the +y side): a 45-degree chamfer across the edge,
+// y - z >= h - 2.3, and two 45-degree chamfers along the diagonals,
+// y -+ x - sqrt(2) z >= h - 4.578
+module edge_notch(h = U/2 - pad_in) {
     intersection() {
-        // 45-degree chamfer across the edge
         translate([-10, 0, 0]) rotate([90, 0, 90]) linear_extrude(height = 20)
-            polygon([[19.5 - 1, -1], [h + 1, -1], [h + 1, h + 1 - 19.5], [19.5, 0]]);
-        notch_side(1);
-        notch_side(-1);
+            polygon([[h - 2.3 - 1, -1], [h + 1, -1], [h + 1, 3.3], [h - 2.3, 0]]);
+        notch_side(1, h - 4.578);
+        notch_side(-1, h - 4.578);
     }
 }
 
-// half-space y - sg * x - sqrt(2) z >= 17.222 inside a box; faces wound
-// clockwise seen from outside
-module notch_side(sg)
+// half-space y - sg * x - sqrt(2) z >= c inside a box; faces wound clockwise
+// seen from outside
+module notch_side(sg, c)
     polyhedron(
-        points = [[-10, 17.222 - sg * 10 - sqrt(2), -1], [10, 17.222 + sg * 10 - sqrt(2), -1],
-                  [10, 17.222 + sg * 10 + 4 * sqrt(2), 4], [-10, 17.222 - sg * 10 + 4 * sqrt(2), 4],
-                  [-10, 40, -1], [10, 40, -1], [10, 40, 4], [-10, 40, 4]],
+        points = [[-10, c - sg * 10 - sqrt(2), -1], [10, c + sg * 10 - sqrt(2), -1],
+                  [10, c + sg * 10 + 4 * sqrt(2), 4], [-10, c - sg * 10 + 4 * sqrt(2), 4],
+                  [-10, c + 25, -1], [10, c + 25, -1], [10, c + 25, 4], [-10, c + 25, 4]],
         faces = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [7, 6, 2, 3], [2, 6, 5, 1], [7, 3, 0, 4]]);
 
 // the central pocket of each pad (built at the origin)
@@ -576,17 +591,31 @@ module channel_low()
 function side_kind(outside, wall_kind) = !outside ? 0 : wall_kind == "simple" ? 1 : 2;
 
 module pads()
-    for (i = [0:nx_cells - 1], j = [0:ny_cells - 1])
-        translate([U * i, U * j, 0])
-            pad_variant([side_kind(j == ny_cells - 1, back_wall), side_kind(i == 0, left_wall),
-                         side_kind(j == 0, front_wall), side_kind(i == nx_cells - 1, right_wall)]);
+    for (i = [0:nx_cells - 1], j = [0:ny_cells - 1]) {
+        c = cols[i];
+        r = rows[j];
+        translate([c[0], r[0], 0])
+            if (c[1] == U && r[1] == U)
+                pad_variant([side_kind(j == ny_cells - 1, back_wall), side_kind(i == 0, left_wall),
+                             side_kind(j == 0, front_wall), side_kind(i == nx_cells - 1, right_wall)]);
+            else
+                half_pad(c[1], r[1]);
+    }
+
+// a pad on a half-LU cell: the holes on the 25 mm grid and the edge notches
+module half_pad(wx, wy)
+    difference() {
+        intersection() {
+            cell_pad(0, 0, wx, wy);
+            translate([-U, -U, -1]) cube([2 * U, 2 * U, floor_z + 1]);
+        }
+        for (dx = wx == U ? [-12.5, 12.5] : [0], dy = wy == U ? [-12.5, 12.5] : [0])
+            translate([dx, dy, 0]) threaded_hole();
+        for (k = [0:3]) rotate([0, 0, 90 * k])
+            edge_notch((k % 2 == 0 ? wy : wx) / 2 - pad_in);
+    }
 
 // ------------------------------------------------------------------ holes
-
-module base_holes() {
-    for (i = [0:nx_cells - 1], j = [0:ny_cells - 1], dx = [-12.5, 12.5], dy = [-12.5, 12.5])
-        translate([U*i + dx, U*j + dy, 0]) threaded_hole();
-}
 
 // one blind threaded hole, axis at the origin, from below z = 0 up to hole_top
 module threaded_hole() {
