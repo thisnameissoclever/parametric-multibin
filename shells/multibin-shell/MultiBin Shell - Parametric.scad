@@ -60,6 +60,7 @@ bulge_h  = 5;                    // bulge half length at the face
 notch_d  = 0.8;                  // bulge end notches: depth past the bulge side,
 notch_n  = 1.0;                  // starting this far below the face,
 notch_l  = 2.2;                  // and this long, with 45-degree ends
+open_cut = 0.9;                  // open (topless) channel: wall behind it cut this far below the rim
 cap_low  = 5.5;                  // cap underside, below the rim, at the face
 cap_high = 4.0;                  // cap underside, below the rim, at the flank
 roof_c   = 12.5;                 // closed end: the slot turns 45 degrees on each
@@ -224,8 +225,12 @@ module channel_cutter(kind) {
             roof_side() channel_roof();
             mirror([1, 0, 0]) roof_side() channel_roof();
         }
-    else
+    else {
         channel_open();
+        // an open rail top also cuts the thin wall behind the channel flat, just
+        // below the rim, back to the inner rim chamfer
+        translate([-ch_half, -1, ZT - open_cut]) cube([2 * ch_half, wall + 2, open_cut + 1]);
+    }
 }
 
 // the slot without a closed end: dovetail plus the bulges every 25 mm
@@ -309,16 +314,18 @@ function rec_profile(z0) =
     [[-1, z0 - 0.5], [0, z0], [rec_d, z0 + rec_lo], [rec_d, z0 + rec_h - rec_d],
      [0, z0 + rec_h], [-1, z0 + rec_h + 1]];
 
-// a catch slot on the wall, in face coordinates (t along, n into the wall from
-// the inner face, z up); its ends are 45 degrees in t
-module catch_slot(z0)
+// a recess on the inner face of a wall between t0 and t1, in face coordinates
+// (t along, n into the wall from the inner face, z up); its ends are 45 degrees
+// in t, which at the corners is exactly the inner corner chamfer plane
+module wall_recess(z0, t0, t1)
     intersection() {
         translate([0, 0, z0 - 1]) linear_extrude(height = rec_h + 2)
-            polygon([[catch_t0 - 1, -1], [catch_t1 + 1, -1], [catch_t1, 0],
-                     [catch_t1 - rec_d, rec_d], [catch_t0 + rec_d, rec_d], [catch_t0, 0]]);
-        rotate([90, 0, 90]) translate([0, 0, catch_t0 - 2])
-            linear_extrude(height = catch_t1 - catch_t0 + 4) polygon(rec_profile(z0));
+            polygon([[t0 - 1, -1], [t1 + 1, -1], [t1, 0], [t1 - rec_d, rec_d], [t0 + rec_d, rec_d], [t0, 0]]);
+        rotate([90, 0, 90]) translate([0, 0, t0 - 2])
+            linear_extrude(height = t1 - t0 + 4) polygon(rec_profile(z0));
     }
+
+module catch_slot(z0) wall_recess(z0, catch_t0, catch_t1);
 
 // a vertical groove on the inner face at a seam, z0 .. z1
 module seam_groove(z0, z1)
@@ -337,25 +344,29 @@ module place_inner(side, s)
     place_on_face(side, s) translate([0, wall, 0]) mirror([0, 1, 0]) children();
 
 module inner_recesses() {
-    zbands = [for (k = [1:1:floor(NZ + eps)]) 5 + U * k];       // 50 mm band tops
-    for (f = [["front", nx_cells], ["back", nx_cells], ["left", ny_cells], ["right", ny_cells]]) {
+    // upper catch slots sit below each 50 mm band top and below the rim; the
+    // two coincide when the depth is a whole number of LU
+    zbands = concat([for (k = [1:1:floor(NZ + eps)]) 5 + U * k],
+                    abs(NZ - floor(NZ + eps)) > eps ? [ZT] : []);
+    for (f = [["front", nx_cells, front_wall], ["back", nx_cells, back_wall],
+              ["left", ny_cells, left_wall], ["right", ny_cells, right_wall]]) {
         for (k = [0:f[1] - 1]) place_inner(f[0], U * k) for (m = [0, 1]) mirror([m, 0, 0]) {
             catch_slot(catch_z0);
             for (zb = zbands) catch_slot(zb - catch_up);
+            // a wall with an open rail top only has short recesses at the rim
+            if (f[2] == "topless") catch_slot(ZT - groove_up);
         }
-        // seam grooves between LUs along the face, one per 50 mm band
+        // seam grooves between LUs along the face, one per 50 mm band (a partial
+        // top band included), each ending 7 mm below the top of its band
         for (k = [0:1:f[1] - 2]) place_inner(f[0], U * k + U/2)
-            for (b = [0:1:floor(NZ + eps) - 1]) seam_groove(catch_z0 + U * b, U * (b + 1) - 2);
+            for (b = [0:1:ceil(NZ - eps) - 1])
+                seam_groove(catch_z0 + U * b, min(U * (b + 1) + 5, ZT) - 7);
+        // a topped rail wall has a groove along its whole inner face at the rim
+        // (placed at the face centre: the back and left face frames run backwards)
+        if (f[2] == "topped") place_inner(f[0], U * (f[1] - 1) / 2)
+            wall_recess(ZT - groove_up, -(U * (f[1] - 1) / 2 + U/2 - wall - c_in),
+                        U * (f[1] - 1) / 2 + U/2 - wall - c_in);
     }
-    // rim groove: the flat inner faces pushed out, the corner planes kept
-    xi0 = X0 + wall; xi1 = X1 - wall; yi0 = Y0 + wall; yi1 = Y1 - wall;
-    zg = ZT - groove_up;
-    oct_loft(octagon(xi0, xi1, yi0, yi1, c_in),
-             octagon(xi0 - rec_d, xi1 + rec_d, yi0 - rec_d, yi1 + rec_d, c_in + 2 * rec_d), zg, zg + rec_lo);
-    oct_prism(xi0 - rec_d, xi1 + rec_d, yi0 - rec_d, yi1 + rec_d, c_in + 2 * rec_d,
-              zg + rec_lo - eps, zg + rec_h - rec_d + eps);
-    oct_loft(octagon(xi0 - rec_d, xi1 + rec_d, yi0 - rec_d, yi1 + rec_d, c_in + 2 * rec_d),
-             octagon(xi0, xi1, yi0, yi1, c_in), zg + rec_h - rec_d, zg + rec_h);
 }
 
 // ------------------------------------------------------------------ clip slots
