@@ -17,12 +17,12 @@ import mbpaths  # noqa: E402
 
 STL_DIR = mbpaths.refs("shell")
 
-WALLS = {"T": "Topped Rail", "O": "Topless Rail", "S": "Simple"}
+WALLS = {"T": "Topped Rail", "O": "Topless Rail", "S": "Simple Walls"}
 
 # key -> (x, y, z) in LU
 SIZES = {
     "111": (1, 1, 1), "212": (2, 1, 2), "313": (3, 1, 3), "3135": (3, 1, 3.5),
-    "323": (3, 2, 3),
+    "323": (3, 2, 3), "1215": (1, 2, 1.5),
 }
 
 

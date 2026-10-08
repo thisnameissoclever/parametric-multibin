@@ -1,6 +1,7 @@
 """Depth image of one wall face of a reference shell, for spotting features.
 
 Usage: python facemap.py KEY FACE SIDE [step] [out.png] [lo hi]
+KEY may also be a path to any STL file, for mapping a generated mesh.
 FACE is one of -x +x -y +y (the wall's outward direction). SIDE is "out" to
 look at the outer surface from outside, or "in" to look at the inner surface
 from the cavity. Rays run parallel to the face normal on a grid with the given
@@ -38,7 +39,7 @@ def main():
     key, face, side = sys.argv[1], sys.argv[2], sys.argv[3]
     step = float(sys.argv[4]) if len(sys.argv) > 4 else 0.1
     out = sys.argv[5] if len(sys.argv) > 5 else f"{key}_{face}_{side}.png"
-    mesh = trimesh.load_mesh(STL_DIR / fname(key))
+    mesh = trimesh.load_mesh(Path(key) if key.lower().endswith(".stl") else STL_DIR / fname(key))
     lo, hi = mesh.bounds
     ax = "xyz".index(face[1])
     sgn = 1 if face[0] == "+" else -1

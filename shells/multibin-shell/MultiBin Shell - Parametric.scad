@@ -44,7 +44,10 @@ foot_z  = 6.8;                   // outer face meets the 45-degree foot chamfer
 pad_in  = 3.2;                   // base pad inset from the cell edge
 pad_top = 3.6;                   // pad's vertical side ends here
 pad_c   = 5.448;                 // pad corner chamfer leg
-bridge_z = 5.4;                  // underside of the floor between pads
+bridge_z = 5.4;                  // underside of the floor between pads, beside their flat sides
+bridge_lo = 5.2;                 // ... and beside their corner chamfers
+foot_c  = 5.8;                   // corner faces meet their outer plane here
+corner_in = 2.2;                 // pad corner face inset from the outer corner face
 
 // channel (dovetail rail slot), in face coordinates: t along the face,
 // n into the wall from the outer face
@@ -72,6 +75,18 @@ catch_z0 = 13.3;                 // lower catch slots (first band only)
 catch_up = 9.2;                  // upper catch slots: this far below each 50 mm band top
 groove_up = 4.2;                 // rim groove: this far below the rim
 seam_g   = 0.5;                  // seam groove half width at its floor
+
+// screw thread in the base holes (right-handed). Along the helix coordinate
+// u = z - pitch * angle / 360 (mod pitch), with the angle measured about the
+// hole axis from +x: the radius rises 3.0 -> 3.5 over [thr_u[0], thr_u[1]],
+// stays 3.5 to thr_u[2], falls back to 3.0 by thr_u[3], and is 3.0 otherwise.
+thr_p     = 3.125;
+thr_r0    = 3.0;
+thr_r1    = 3.5;
+thr_u     = [1.0735, 2.0110, 2.6360, 3.5735];
+thr_steps = 96;                  // facets per turn
+hole_top  = 5.2;
+hole_cone = 3.8;                 // entry cone radius at z = 0 (45 degrees)
 
 nx_cells = ceil(NX - eps);
 ny_cells = ceil(NY - eps);
@@ -116,22 +131,38 @@ module outer_body() {
 
 // the outer envelope of everything below the walls: vertical sides inset by
 // pad_in, then a 45-degree chamfer out to the outer faces at foot_z
-module base_envelope() {
-    oct_prism(X0 + pad_in, X1 - pad_in, Y0 + pad_in, Y1 - pad_in, pad_c, -1, pad_top);
-    oct_loft(octagon(X0 + pad_in, X1 - pad_in, Y0 + pad_in, Y1 - pad_in, pad_c),
-             octagon(X0, X1, Y0, Y1, c_out), pad_top, foot_z);
-}
+module base_envelope() foot_block(X0, X1, Y0, Y1);
+
+// a block with the foot's chamfers: flat faces inset pad_in below and chamfered
+// 45 degrees out to the full face at foot_z, corner faces inset corner_in and
+// chamfered 45 degrees out to the full corner at foot_c
+module foot_block(x0, x1, y0, y1)
+    intersection_for (f = [[0, x1, pad_in, foot_z], [90, y1, pad_in, foot_z],
+                           [180, -x0, pad_in, foot_z], [270, -y0, pad_in, foot_z],
+                           [45, (x1 + y1 - c_out) / sqrt(2), corner_in, foot_c],
+                           [135, (-x0 + y1 - c_out) / sqrt(2), corner_in, foot_c],
+                           [225, (-x0 - y0 - c_out) / sqrt(2), corner_in, foot_c],
+                           [315, (x1 - y0 - c_out) / sqrt(2), corner_in, foot_c]])
+        foot_halfspace(f[0], f[1], f[2], f[3]);
+
+// everything on the inner side of a face whose outward normal points at angle
+// ang: the face sits d0 from the origin, inset by `inset` below z_full - inset
+// and chamfered 45 degrees up to the full face at z_full
+module foot_halfspace(ang, d0, inset, z_full)
+    rotate([0, 0, ang]) rotate([90, 0, 0]) linear_extrude(height = 4000, center = true)
+        polygon([[-2000, -2], [d0 - inset, -2], [d0 - inset, z_full - inset],
+                 [d0, z_full], [d0, foot_z + 1], [-2000, foot_z + 1]]);
 
 module cell_pad(cx, cy) {
     h = U/2 - pad_in;            // 21.8
-    union() {
-        // 0.4 mm chamfer on the bottom edge
-        oct_loft(oct_in(cx - h, cx + h, cy - h, cy + h, pad_c, 0.4),
-                 octagon(cx - h, cx + h, cy - h, cy + h, pad_c), 0, 0.4);
-        oct_prism(cx - h, cx + h, cy - h, cy + h, pad_c, 0.4, pad_top);
-        oct_loft(octagon(cx - h, cx + h, cy - h, cy + h, pad_c),
-                 octagon(cx - U/2, cx + U/2, cy - U/2, cy + U/2, c_out),
-                 pad_top, foot_z);
+    intersection() {
+        foot_block(cx - U/2, cx + U/2, cy - U/2, cy + U/2);
+        union() {
+            // 0.4 mm chamfer on the bottom edge
+            oct_loft(oct_in(cx - h, cx + h, cy - h, cy + h, pad_c, 0.4),
+                     octagon(cx - h, cx + h, cy - h, cy + h, pad_c), 0, 0.4);
+            translate([cx - U, cy - U, 0.4 - eps]) cube([2 * U, 2 * U, foot_z]);
+        }
     }
 }
 
@@ -141,9 +172,30 @@ module base() {
         union() {
             for (i = [0:nx_cells - 1], j = [0:ny_cells - 1]) cell_pad(U*i, U*j);
             translate([X0, Y0, bridge_z]) cube([X1 - X0, Y1 - Y0, foot_z - bridge_z + eps]);
-        }
+            // between the pads the floor reaches down to bridge_lo, except in the gap
+            // between two pads' 45-degree faces, where it stops at bridge_z: beside
+            // the flat part of each pad side across columns, and along the whole
+            // length of the seams between rows (through the crossings)
+            difference() {
+                translate([X0, Y0, bridge_lo]) cube([X1 - X0, Y1 - Y0, bridge_z - bridge_lo + eps]);
+                fl = U/2 - pad_in - pad_c;                     // flat half length, 16.352
+                for (i = [0:1:nx_cells - 2], j = [0:ny_cells - 1])
+                    translate([U * i + U/2, U * j, 0]) rotate([0, 0, 90]) seam_gap(2 * fl);
+                for (j = [0:1:ny_cells - 2])
+                    translate([(U * (nx_cells - 1)) / 2, U * j + U/2, 0])
+                        seam_gap(U * (nx_cells - 1) + 2 * fl);
+            }        }
     }
 }
+
+// the gap between two pads' 45-degree faces near the floor underside, centred on
+// a seam running along x, for the given length; its half width at height z is
+// pad_in + pad_top - z (1.6 at bridge_lo, 1.4 at bridge_z)
+function gap_hw(z) = pad_in + pad_top - z;
+module seam_gap(len)
+    translate([-len / 2, 0, 0]) rotate([90, 0, 90]) linear_extrude(height = len)
+        polygon([[-gap_hw(bridge_lo - 0.1), bridge_lo - 0.1], [gap_hw(bridge_lo - 0.1), bridge_lo - 0.1],
+                 [gap_hw(bridge_z + 0.1), bridge_z + 0.1], [-gap_hw(bridge_z + 0.1), bridge_z + 0.1]]);
 
 module cavity() {
     xi0 = X0 + wall; xi1 = X1 - wall; yi0 = Y0 + wall; yi1 = Y1 - wall;
@@ -224,10 +276,11 @@ module channel_cap()
 
 // one side of the closed end, built as a dovetail half-profile in (s, n)
 // extruded along the 45-degree line and rotated into place
+// (sized from the shell height: a fixed size would clip the bottom of tall shells)
 module channel_roof()
-    linear_extrude(height = 400, center = true)
-        polygon([[-100, -1], [ch_open, -1], [ch_open, ch_lip], [ch_half, ch_flank],
-                 [ch_half, ch_floor + 1], [-100, ch_floor + 1]]);
+    linear_extrude(height = 8 * ZT, center = true)
+        polygon([[-4 * ZT, -1], [ch_open, -1], [ch_open, ch_lip], [ch_half, ch_flank],
+                 [ch_half, ch_floor + 1], [-4 * ZT, ch_floor + 1]]);
 
 module roof_side()
     translate([(ZT - roof_c) / 2, 0, (ZT - roof_c) / 2]) rotate([0, -45, 0]) children();
@@ -327,6 +380,26 @@ module seam_slot(zc)
         hull() { oct_slab(3.0, 1.0, 0.4, 2.6);   oct_slab(3.5, 1.5, 0.693, 3.1); }
     }
 
+// the slot through each outer corner, at the same height as the top seam slots;
+// the corner wall is 2 mm thick, so only the outer part of the seam slot profile
+// exists there
+module corner_slot(zc)
+    translate([0, 0, zc]) {
+        hull() { oct_slab(3.2, 1.2, 0.517, -0.1); oct_slab(3.0, 1.0, 0.4, 0.2); }
+        hull() { oct_slab(3.0, 1.0, 0.4, 0.2);   oct_slab(3.0, 1.0, 0.4, 0.8); }
+        hull() { oct_slab(2.2, 1.0, 0.318, 0.8); oct_slab(2.0, 1.0, 0.4, 1.0); }
+        hull() { oct_slab(2.0, 1.0, 0.4, 1.0);   oct_slab(2.0, 1.0, 0.4, 1.8); }
+        hull() { oct_slab(2.0, 1.0, 0.4, 1.8);   oct_slab(2.5, 1.5, 0.693, 2.3); }
+    }
+
+module corner_slots()
+    for (c = [[X1, Y1, 45], [X0, Y1, 135], [X0, Y0, 225], [X1, Y0, 315]]) {
+        // centre of the diagonal corner face
+        fx = c[0] - sign(c[0] - (X0 + X1) / 2) * c_out / 2;
+        fy = c[1] - sign(c[1] - (Y0 + Y1) / 2) * c_out / 2;
+        translate([fx, fy, 0]) rotate([0, 0, c[2] + 90]) corner_slot(ZT - 3);
+    }
+
 module seam_slots() {
     for (f = [["front", nx_cells], ["back", nx_cells], ["left", ny_cells], ["right", ny_cells]])
         for (k = [0:1:f[1] - 2]) place_on_face(f[0], U * k + U/2)
@@ -339,8 +412,15 @@ module seam_slots() {
 // chamfers on the long edges, running along y from y0 to y1
 module pocket_bar(a, y0, y1)
     translate([0, y1, 2]) rotate([90, 0, 0]) linear_extrude(height = y1 - y0)
-        polygon([[-a + 0.4, -1], [a - 0.4, -1], [a, -0.6], [a, 0.6],
-                 [a - 0.4, 1], [-a + 0.4, 1], [-a, 0.6], [-a, -0.6]]);
+        polygon(pocket_section(a, 1, 0.4));
+
+// octagonal pocket section about z = 2: half width a, half height b, chamfer c
+function pocket_section(a, b, c) =
+    [[-a + c, -b], [a - c, -b], [a, -b + c], [a, b - c], [a - c, b], [-a + c, b], [-a, b - c], [-a, -b + c]];
+
+// a thin slice of a pocket section at depth y along the pocket axis
+module pocket_slab(a, b, c, y)
+    translate([0, y, 2]) rotate([90, 0, 0]) linear_extrude(height = 0.001) polygon(pocket_section(a, b, c));
 
 // clip pocket entering a pad side, built for the +y side of a pad centred at the
 // origin, at t along the side: a 6 wide entry, then an obround head
@@ -371,6 +451,8 @@ module corner_pocket() {
     rotate([0, 0, -45]) {
         pocket_bar(2.0, sf - 2.8, sf + 0.5);
         pocket_bar(3.0, sf - 4.8, sf - 2.8);
+        // 0.2 mm 45-degree chamfer around the opening
+        hull() { pocket_slab(2.0, 1.0, 0.4, sf - 0.2); pocket_slab(2.5, 1.5, 0.693, sf + 0.3); }
     }
 }
 
@@ -418,20 +500,25 @@ module central_pocket() {
         translate([-10, -14.2 + k, 3.0]) cube([20, 0.1, 0.4]);
     }
     // a plate up to 3.4 in the middle band, a square to 3.6, then the octagon to 5.2
-    intersection() {
-        oct_prism(-8.5, 8.5, -8.5, 8.5, 4.979, 3.2 - eps, 3.4);
-        translate([-9, -5.1, 3]) cube([18, 10.2, 1]);
-    }
+    // the plate keeps the flared octagon's two top chamfers; its lower corners are square
+    translate([0, 0, 3.2 - eps]) linear_extrude(height = 0.2 + eps)
+        polygon([[-8.5, -5.1], [8.5, -5.1], [8.5, 3.521], [6.921, 5.1], [-6.921, 5.1], [-8.5, 3.521]]);
     translate([-5.1, -5.1, 3.4 - eps]) cube([10.2, 10.2, 0.2 + 2 * eps]);
     oct_prism(-5.1, 5.1, -5.1, 5.1, 2.988, 3.6 - eps, 5.2);
 }
 
-module pad_features(cx, cy)
-    translate([cx, cy, 0]) {
+// i, j: the pad's cell indices. Side clip pockets only open onto the outside
+// of the shell; a side facing a neighbouring pad has none.
+module pad_features(i, j)
+    translate([U * i, U * j, 0]) {
         central_pocket();
-        for (r = [0, 90, 180, 270]) rotate([0, 0, r]) {
-            side_pocket(7.5);
-            side_pocket(-7.5);
+        // rotation -> the pad side it builds: 0 = +y, 90 = -x, 180 = -y, 270 = +x
+        outside = [j == ny_cells - 1, i == 0, j == 0, i == nx_cells - 1];
+        for (k = [0:3]) rotate([0, 0, 90 * k]) {
+            if (outside[k]) {
+                side_pocket(7.5);
+                side_pocket(-7.5);
+            }
             corner_pocket();
             edge_notch();
         }
@@ -441,7 +528,42 @@ module pad_features(cx, cy)
 
 module base_holes() {
     for (i = [0:nx_cells - 1], j = [0:ny_cells - 1], dx = [-12.5, 12.5], dy = [-12.5, 12.5])
-        translate([U*i + dx, U*j + dy, -1]) cylinder(r = 3.25, h = 5.2 + 1);
+        translate([U*i + dx, U*j + dy, 0]) threaded_hole();
+}
+
+// one blind threaded hole, axis at the origin, from below z = 0 up to hole_top
+module threaded_hole() {
+    intersection() {
+        union() {
+            rotate([0, 0, 180 / thr_steps]) translate([0, 0, -1])
+                cylinder(r = thr_r0 / cos(180 / thr_steps), h = hole_top + 1, $fn = thr_steps);
+            thread_ridge(-thr_p, 3);
+        }
+        translate([-5, -5, -1]) cube([10, 10, hole_top + 1]);
+    }
+    // 45-degree entry cone
+    translate([0, 0, -1]) cylinder(r1 = hole_cone + 1, r2 = thr_r0 - 0.01,
+                                   h = 1 + hole_cone - thr_r0 + 0.01, $fn = thr_steps);
+}
+
+// the groove of an internal thread as a helical bar with a trapezoid section,
+// starting at z0 and running the given number of turns; its inner edge sits
+// just inside the core cylinder so the two overlap
+function thr_section() =
+    let (k = (thr_u[1] - thr_u[0]) / (thr_r1 - thr_r0), ri = thr_r0 - 0.05)
+    [[ri, thr_u[0] - k * 0.05], [thr_r1, thr_u[1]], [thr_r1, thr_u[2]], [ri, thr_u[3] + k * 0.05]];
+
+module thread_ridge(z0, turns) {
+    n = thr_steps * turns;
+    sec = thr_section();
+    pts = [for (i = [0:n]) let (a = 360 * i / thr_steps, dz = z0 + thr_p * i / thr_steps)
+               for (q = sec) [q[0] * cos(a), q[0] * sin(a), q[1] + dz]];
+    faces = concat(
+        [[3, 2, 1, 0]],
+        [[4 * n, 4 * n + 1, 4 * n + 2, 4 * n + 3]],
+        [for (i = [0:n - 1], k = [0:3])
+            let (a = 4 * i + k, b = 4 * i + (k + 1) % 4) [a, b, b + 4, a + 4]]);
+    polyhedron(points = pts, faces = faces);
 }
 
 // ------------------------------------------------------------------ model
@@ -456,5 +578,6 @@ difference() {
     base_holes();
     inner_recesses();
     seam_slots();
-    for (i = [0:nx_cells - 1], j = [0:ny_cells - 1]) pad_features(U * i, U * j);
+    corner_slots();
+    for (i = [0:nx_cells - 1], j = [0:ny_cells - 1]) pad_features(i, j);
 }
