@@ -12,6 +12,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 - [Gate features on layout units, not millimetres](#gate-features-on-layout-units-not-millimetres)
 - [Size helper geometry from the model](#size-helper-geometry-from-the-model)
 - [Measure the original before changing a deliberate deviation](#measure-the-original-before-changing-a-deliberate-deviation)
+- [Parallel runs need a parent that waits](#parallel-runs-need-a-parent-that-waits)
 
 ## Random sampling hides edge-shaped deviations
 
@@ -92,3 +93,13 @@ Mistakes and near misses from building the generators, each with its cause, the 
 **Rule:** before changing geometry that `DEVIATIONS.md` explains, measure the original at that spot.
 
 **Check:** each deviation entry carries the command that measures it.
+
+## Parallel runs need a parent that waits
+
+**What happened:** three comparison runs were started as background subshells from a Git Bash command that then exited. The tool reported the command as finished, the logs were still empty, and a second launch started duplicate runs that truncated the first runs' logs and raced them for the same output files.
+
+**Cause:** on Windows, Git Bash subshells started with `&` keep running after their parent exits, so the parent's exit says nothing about the runs it started.
+
+**Rule:** start parallel runs from one command that ends with `wait`, and before relaunching, list the running `openscad.exe` and `python.exe` processes to find survivors.
+
+**Check:** `Get-CimInstance Win32_Process -Filter "Name='openscad.exe'"` lists one process per expected run, each with a different output file.

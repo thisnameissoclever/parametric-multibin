@@ -380,18 +380,26 @@ module inner_recesses() {
         for (k = [0:1:f[1] - 1]) place_inner(f[0], U * k) for (m = [0, 1]) mirror([m, 0, 0]) {
             catch_slot(catch_z0);
             for (zb = zbands) catch_slot(zb - catch_up);
-            // a wall with an open rail top only has short recesses at the rim
-            if (f[2] == "topless") catch_slot(ZT - groove_up);
         }
         // seam grooves between LUs along the face, one per 50 mm band (a partial
-        // top band included), each ending 7 mm below the top of its band
+        // top band included), each ending 7 mm below the top of its band. On a
+        // simple wall the groove in a partial top band is short, starting at the
+        // upper catch slot height (measured on the 1x2x1.5 Simple Walls shell).
         for (sk = seams(f[3])) place_inner(f[0], sk)
             for (b = [0:1:ceil(NZ - eps) - 1])
-                seam_groove(catch_z0 + U * b, min(U * (b + 1) + 5, ZT) - 7);
-        // a topped rail wall has a groove along its whole inner face at the rim
-        // (placed at the face centre: the back and left face frames run backwards)
-        if (f[2] == "topped") place_inner(f[0], f[4])
-            wall_recess(ZT - groove_up, -(f[5] / 2 - wall - c_in), f[5] / 2 - wall - c_in);
+                seam_groove(f[2] == "simple" && U * (b + 1) + 5 > ZT + eps ? ZT - catch_up : catch_z0 + U * b,
+                            min(U * (b + 1) + 5, ZT) - 7);
+        // a groove along the whole flat inner face at the rim, except that an open
+        // (topless) rail wall leaves it out behind each rail channel. rim lists
+        // the groove's segments as start, end pairs along the face; each segment
+        // is placed at its own midpoint because the back and left face frames
+        // run backwards.
+        fl = f[5] / 2 - wall - c_in;
+        rim = f[2] == "topless"
+            ? concat([f[4] - fl], [for (k = [0:1:f[1] - 1]) each [U * k - catch_t0, U * k + catch_t0]], [f[4] + fl])
+            : [f[4] - fl, f[4] + fl];
+        for (i = [0:2:len(rim) - 2]) place_inner(f[0], (rim[i] + rim[i + 1]) / 2)
+            wall_recess(ZT - groove_up, -(rim[i + 1] - rim[i]) / 2, (rim[i + 1] - rim[i]) / 2);
     }
 }
 

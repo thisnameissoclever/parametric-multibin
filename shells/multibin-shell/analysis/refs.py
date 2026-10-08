@@ -29,6 +29,9 @@ SIZES = {
 def fname(key):
     wall, size = key[0], key[1:]
     x, y, z = SIZES[size]
+    # MultiBuild names the Simple Walls files differently: "CU" and "Multibin"
+    if wall == "S":
+        return f"{x:g}x{y:g}x{z:g} CU - {WALLS[wall]} - Multibin Shell.stl"
     return f"{x:g}x{y:g}x{z:g} LU - {WALLS[wall]} - MultiBin Shell.stl"
 
 
