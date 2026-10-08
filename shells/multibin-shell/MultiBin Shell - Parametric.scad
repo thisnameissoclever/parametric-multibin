@@ -26,6 +26,7 @@ right_wall = "topped"; // [topped, topless, simple]
 $fs = 0.25;
 $fa = 2;
 eps = 0.01;
+arc_fn = 32;                     // facets on the small pocket arcs (chord error 0.011 mm)
 
 U  = 50;
 NX = max(1, width_lu);
@@ -85,7 +86,7 @@ thr_p     = 3.125;
 thr_r0    = 3.0;
 thr_r1    = 3.5;
 thr_u     = [1.0735, 2.0110, 2.6360, 3.5735];
-thr_steps = 96;                  // facets per turn
+thr_steps = 32;                  // facets per turn (chord error under 0.02 mm)
 hole_top  = 5.2;
 hole_cone = 3.8;                 // entry cone radius at z = 0 (45 degrees)
 
@@ -167,27 +168,37 @@ module cell_pad(cx, cy) {
     }
 }
 
-module base() {
-    intersection() {
-        base_envelope();
-        union() {
-            for (i = [0:nx_cells - 1], j = [0:ny_cells - 1]) cell_pad(U*i, U*j);
-            translate([X0, Y0, bridge_z]) cube([X1 - X0, Y1 - Y0, foot_z - bridge_z + eps]);
-            // between the pads the floor reaches down to bridge_lo, except in the gap
-            // between two pads' 45-degree faces, where it stops at bridge_z: beside
-            // the flat part of each pad side across columns, and along the whole
-            // length of the seams between rows (through the crossings)
-            difference() {
-                translate([X0, Y0, bridge_lo]) cube([X1 - X0, Y1 - Y0, bridge_z - bridge_lo + eps]);
-                fl = U/2 - pad_in - pad_c;                     // flat half length, 16.352
-                for (i = [0:1:nx_cells - 2], j = [0:ny_cells - 1])
-                    translate([U * i + U/2, U * j, 0]) rotate([0, 0, 90]) seam_gap(2 * fl);
-                for (j = [0:1:ny_cells - 2])
-                    translate([(U * (nx_cells - 1)) / 2, U * j + U/2, 0])
-                        seam_gap(U * (nx_cells - 1) + 2 * fl);
-            }        }
+// the floor between the pads, from its underside up to the floor top
+module floor_slab()
+    difference() {
+        intersection() {
+            base_envelope();
+            union() {
+                translate([X0, Y0, bridge_z]) cube([X1 - X0, Y1 - Y0, floor_z - bridge_z]);
+                // between the pads the floor reaches down to bridge_lo, except in the
+                // gap between two pads' 45-degree faces, where it stops at bridge_z:
+                // beside the flat part of each pad side across columns, and along the
+                // whole length of the seams between rows (through the crossings)
+                difference() {
+                    translate([X0, Y0, bridge_lo]) cube([X1 - X0, Y1 - Y0, bridge_z - bridge_lo + eps]);
+                    fl = U/2 - pad_in - pad_c;                     // flat half length, 16.352
+                    for (i = [0:1:nx_cells - 2], j = [0:ny_cells - 1])
+                        translate([U * i + U/2, U * j, 0]) rotate([0, 0, 90]) seam_gap(2 * fl);
+                    for (j = [0:1:ny_cells - 2])
+                        translate([(U * (nx_cells - 1)) / 2, U * j + U/2, 0])
+                            seam_gap(U * (nx_cells - 1) + 2 * fl);
+                }
+            }
+        }
+        channels_low();
     }
-}
+
+module channels_low()
+    for (f = [["front", front_wall, nx_cells], ["back", back_wall, nx_cells],
+              ["left", left_wall, ny_cells], ["right", right_wall, ny_cells]])
+        if (f[1] != "simple")
+            for (k = [0:f[2] - 1])
+                place_on_face(f[0], U * k) channel_low();
 
 // the gap between two pads' 45-degree faces near the floor underside, centred on
 // a seam running along x, for the given length; its half width at height z is
@@ -438,21 +449,24 @@ module pocket_slab(a, b, c, y)
 module side_pocket(t) {
     h = U/2 - pad_in;                                   // 21.8, the pad face
     translate([t, 0, 0]) {
-        translate([-3, 19.0, 1]) cube([6, h - 19.0 + 1, 2]);
+        translate([0, 0, 1]) linear_extrude(height = 2) side_pocket_outline(h + 0.5);
         hull() {                                        // 0.2 chamfer at the opening
             translate([-3, h - 0.2, 1]) cube([6, 0.001, 2]);
             translate([-3.2, h, 1]) cube([6.4, 0.5, 2]);
         }
-        hull() for (dx = [-1.25, 1.25]) translate([dx, 18.05, 1]) cylinder(r = 2.25, h = 2);
         // ceiling slits, 0.1 wide and 0.2 tall, following the pocket outline
-        for (ys = [16.7, 17.6, 19.7]) intersection() {
-            union() {
-                translate([-3, 19.0, 2.9]) cube([6, h - 19.0, 0.3]);
-                hull() for (dx = [-1.25, 1.25]) translate([dx, 18.05, 2.9]) cylinder(r = 2.25, h = 0.3);
+        translate([0, 0, 2.9]) linear_extrude(height = 0.3)
+            intersection() {
+                side_pocket_outline(h);
+                for (ys = [16.7, 17.6, 19.7]) translate([-10, ys]) square([20, 0.1]);
             }
-            translate([-10, ys, 2.9]) cube([20, 0.1, 0.3]);
-        }
     }
+}
+
+// plan of a side clip pocket: a 6 wide entry from the pad face to an obround head
+module side_pocket_outline(y1) {
+    translate([-3, 19.0]) square([6, y1 - 19.0]);
+    hull() for (dx = [-1.25, 1.25]) translate([dx, 18.05]) circle(r = 2.25, $fn = arc_fn);
 }
 
 // T-shaped clip pocket entering a pad corner along its diagonal, built for the
@@ -506,10 +520,11 @@ module central_pocket() {
     }
     translate([0, 0, 2.2 - eps]) linear_extrude(height = 1.0 + eps) polygon(point_prism(-14.9));
     // ceiling slits over the pointed prism, every 1 mm
-    for (k = [0:8]) intersection() {
-        translate([0, 0, 3.0]) linear_extrude(height = 0.4) polygon(point_prism(-14.9));
-        translate([-10, -14.2 + k, 3.0]) cube([20, 0.1, 0.4]);
-    }
+    translate([0, 0, 3.0]) linear_extrude(height = 0.4)
+        intersection() {
+            polygon(point_prism(-14.9));
+            for (k = [0:8]) translate([-10, -14.2 + k]) square([20, 0.1]);
+        }
     // a plate up to 3.4 in the middle band, a square to 3.6, then the octagon to 5.2
     // the plate keeps the flared octagon's two top chamfers; its lower corners are square
     translate([0, 0, 3.2 - eps]) linear_extrude(height = 0.2 + eps)
@@ -518,22 +533,53 @@ module central_pocket() {
     oct_prism(-5.1, 5.1, -5.1, 5.1, 2.988, 3.6 - eps, 5.2);
 }
 
-// i, j: the pad's cell indices. Side clip pockets only open onto the outside
-// of the shell; a side facing a neighbouring pad has none.
-module pad_features(i, j)
-    translate([U * i, U * j, 0]) {
-        central_pocket();
-        // rotation -> the pad side it builds: 0 = +y, 90 = -x, 180 = -y, 270 = +x
-        outside = [j == ny_cells - 1, i == 0, j == 0, i == nx_cells - 1];
+// One pad with every feature cut, built at the origin so that identical pads
+// share one evaluation. sides lists the kind of each pad side in the order
+// +y, -x, -y, +x: 0 = faces a neighbouring pad, 1 = outside with a plain wall,
+// 2 = outside with a rail channel. Side clip pockets only open onto the
+// outside of the shell; a side facing a neighbouring pad has none.
+module pad_variant(sides)
+    difference() {
+        pad_core();
         for (k = [0:3]) rotate([0, 0, 90 * k]) {
-            if (outside[k]) {
+            if (sides[k] > 0) {
                 side_pocket(7.5);
                 side_pocket(-7.5);
             }
+            // the bottom of the rail channel reaches down into the pad's foot
+            if (sides[k] == 2) translate([0, U/2, 0]) rotate([0, 0, 180]) channel_low();
+        }
+    }
+
+// everything every pad has, whatever its neighbours: evaluated once per render
+module pad_core()
+    difference() {
+        intersection() {
+            cell_pad(0, 0);
+            translate([-U, -U, -1]) cube([2 * U, 2 * U, floor_z + 1]);
+        }
+        central_pocket();
+        for (k = [0:3]) rotate([0, 0, 90 * k]) {
             corner_pocket();
             edge_notch();
         }
+        for (dx = [-12.5, 12.5], dy = [-12.5, 12.5]) translate([dx, dy, 0]) threaded_hole();
     }
+
+// the part of a channel cutter below the floor top, in face coordinates
+module channel_low()
+    intersection() {
+        channel_open();
+        translate([-20, -2, -2]) cube([40, wall + 4, floor_z + 2.5]);
+    }
+
+function side_kind(outside, wall_kind) = !outside ? 0 : wall_kind == "simple" ? 1 : 2;
+
+module pads()
+    for (i = [0:nx_cells - 1], j = [0:ny_cells - 1])
+        translate([U * i, U * j, 0])
+            pad_variant([side_kind(j == ny_cells - 1, back_wall), side_kind(i == 0, left_wall),
+                         side_kind(j == 0, front_wall), side_kind(i == nx_cells - 1, right_wall)]);
 
 // ------------------------------------------------------------------ holes
 
@@ -579,16 +625,26 @@ module thread_ridge(z0, turns) {
 
 // ------------------------------------------------------------------ model
 
-difference() {
-    union() {
-        outer_body();
-        base();
+// Everything from the floor top up: walls, rim and floor chamfer. Built apart
+// from the base so that the many wall cutters never touch the base geometry.
+module walls_part()
+    difference() {
+        union() {
+            outer_body();
+            intersection() {
+                base_envelope();
+                translate([X0 - 1, Y0 - 1, floor_z]) cube([X1 - X0 + 2, Y1 - Y0 + 2, foot_z - floor_z + eps]);
+            }
+        }
+        cavity();
+        channels();
+        inner_recesses();
+        seam_slots();
+        corner_slots();
     }
-    cavity();
-    channels();
-    base_holes();
-    inner_recesses();
-    seam_slots();
-    corner_slots();
-    for (i = [0:nx_cells - 1], j = [0:ny_cells - 1]) pad_features(i, j);
+
+union() {
+    walls_part();
+    floor_slab();
+    pads();
 }
