@@ -10,6 +10,7 @@ Thresholds (docs/verification-method.md): bounding box <= 0.02 mm per axis,
 volume <= 0.5 %, p99 <= 0.05 mm, maximum <= 0.2 mm.
 """
 
+import hashlib
 import subprocess
 import sys
 import time
@@ -50,7 +51,40 @@ def out_for(scad=None):
     return d
 
 
+# OpenSCAD output lines that mean a render is not clean. OpenSCAD 2021.01
+# prints its nonplanar-face notice without a WARNING prefix.
+BAD_RENDER = ("WARNING", "ERROR", "nonplanar")
+
+
+def render_problems(stderr):
+    return [ln.strip() for ln in stderr.splitlines() if any(b in ln for b in BAD_RENDER)]
+
+
+def zero_area_triangles(stl):
+    """Triangles whose corners lie on one line, as exported. OpenSCAD writes
+    these where it splits an edge to meet a neighbouring face; they keep every
+    edge shared by exactly two faces and do not change the shape."""
+    t = trimesh.load_mesh(stl, process=False).triangles
+    return int((np.linalg.norm(np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]), axis=1) < 1e-9).sum())
+
+
+def audit(stl):
+    """Mesh soundness and size of an exported STL."""
+    m = trimesh.load_mesh(stl)
+    m.merge_vertices()
+    _, c = np.unique(m.edges_sorted, axis=0, return_counts=True)
+    _, counts = np.unique(np.sort(m.faces, axis=1), axis=0, return_counts=True)
+    return dict(watertight=bool(m.is_watertight), bodies=int(m.body_count),
+                bad_edges=int((c != 2).sum()), dup_faces=int((counts > 1).sum()),
+                extents=[round(float(v), 4) for v in m.extents], volume=round(float(m.volume), 3))
+
+
+def clean(a):
+    return a["watertight"] and a["bodies"] == 1 and a["bad_edges"] == 0 and a["dup_faces"] == 0
+
+
 def generate(key, scad=None):
+    """Render a reference configuration; returns (path or None, seconds, problems)."""
     out = out_for(scad) / f"{key}.stl"
     args = [OPENSCAD, "-o", str(out), str(scad or SCAD)]
     for k, v in params(key).items():
@@ -60,13 +94,13 @@ def generate(key, scad=None):
         out.unlink()
     r = subprocess.run(args, capture_output=True, text=True, timeout=3600)
     secs = time.time() - t0
+    problems = render_problems(r.stderr)
+    for line in problems:
+        print(f"[{key}] scad: {line}")
     if not out.exists():
         print(f"[{key}] GENERATION FAILED\n{r.stderr[-3000:]}")
-        return None, secs
-    for line in r.stderr.splitlines():
-        if "WARNING" in line or "ERROR" in line:
-            print(f"[{key}] scad: {line}")
-    return out, secs
+        return None, secs, problems
+    return out, secs, problems
 
 
 def clusters(pts, dist, limit, cell=3.0):
@@ -113,7 +147,13 @@ def metrics(key, gen_path, n_clusters=10):
     return row
 
 
-def report(rows, timings):
+def openscad_version():
+    r = subprocess.run([OPENSCAD, "--version"], capture_output=True, text=True)
+    return (r.stdout + r.stderr).strip()
+
+
+def report(rows, timings, problems, sound):
+    digest = hashlib.sha256(SCAD.read_bytes()).hexdigest().upper()
     lines = [
         "# VERIFICATION - shell Gate 1 mechanical match",
         "",
@@ -121,18 +161,31 @@ def report(rows, timings):
         f"{N_SAMPLES} surface samples per direction per model, bounding-box aligned, "
         f"plus a sweep of every vertex in both directions.",
         "",
-        "| model | bbox dmax (mm) | vol delta (%) | p99 (worse dir) | sampled max | all-vertices max | render (s) | gate |",
-        "|---|---|---|---|---|---|---|---|",
+        f"File verified: `{SCAD.name}`, SHA-256 {digest}.",
+        "",
+        f"Renderer: {openscad_version()}.",
+        "",
+        "Thresholds (`docs/verification-method.md`): bounding box <= 0.02 mm per axis, volume <= 0.5 %, "
+        "p99 <= 0.05 mm, maximum <= 0.2 mm. The sound column means watertight, one body, every edge "
+        "shared by exactly two faces and no duplicated facets.",
+        "",
+        "| model | bbox dmax (mm) | vol delta (%) | p99 (worse dir) | sampled max | all-vertices max | sound | render (s) | gate |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for r in rows:
         mx = max(r["ref->gen"]["mx"], r["gen->ref"]["mx"])
         vmx = max(r["ref->gen"]["vmax"], r["gen->ref"]["vmax"])
         p99 = max(r["ref->gen"]["p99"], r["gen->ref"]["p99"])
-        ok = r["bbox"] <= 0.02 and r["vol"] <= 0.5 and p99 <= 0.05
+        ok = r["bbox"] <= 0.02 and r["vol"] <= 0.5 and p99 <= 0.05 and sound[r["key"]]
         gate = "PASS" if ok and max(mx, vmx) <= 0.2 else ("PASS*" if ok else "FAIL")
         lines.append(f"| {r['key']} | {r['bbox']:.4f} | {r['vol']:.3f} | {p99:.4f} | {mx:.4f} | "
-                     f"{vmx:.4f} | {timings[r['key']]:.0f} | {gate} |")
+                     f"{vmx:.4f} | {'yes' if sound[r['key']] else 'NO'} | {timings[r['key']]:.0f} | {gate} |")
     lines += ["", "PASS* means every limit is met except a localized maximum covered by DEVIATIONS.md.", ""]
+    noisy = {k: v for k, v in problems.items() if v}
+    if noisy:
+        lines += ["Render messages:", ""] + [f"- {k}: {m}" for k, v in noisy.items() for m in v] + [""]
+    else:
+        lines += ["Every render printed no warning, error or nonplanar-face notice.", ""]
     (ROOT / "VERIFICATION.md").write_text("\n".join(lines), encoding="utf-8")
     print("wrote VERIFICATION.md")
 
@@ -143,16 +196,20 @@ def main():
     if "--clusters" in args:
         n_clusters = int(args[args.index("--clusters") + 1])
     keys = [a for a in args if not a.startswith("--") and not a.isdigit()] or available()
-    rows, timings = [], {}
+    rows, timings, problems, sound = [], {}, {}, {}
     for k in keys:
-        p, secs = generate(k)
+        p, secs, problems[k] = generate(k)
         timings[k] = secs
         print(f"[{k}] rendered in {secs:.1f} s")
         if p:
             rows.append(metrics(k, p, n_clusters))
+            sound[k] = clean(audit(p))
+            if not sound[k]:
+                print(f"[{k}] mesh not a clean single shell: {audit(p)}")
+            print(f"[{k}] zero-area triangles in the export: {zero_area_triangles(p)}")
         print()
     if "--report" in args and len(rows) == len(available()):
-        report(rows, timings)
+        report(rows, timings, problems, sound)
 
 
 if __name__ == "__main__":

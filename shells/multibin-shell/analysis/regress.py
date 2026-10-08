@@ -25,12 +25,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-import numpy as np
-import trimesh
-
 import compare
-from compare import OPENSCAD, generate, metrics, out_for
-from refs import STL_DIR, SIZES, WALLS, fname
+from compare import OPENSCAD, audit, clean, generate, metrics, out_for, render_problems
+from refs import STL_DIR, fname
 
 BASELINE = Path(__file__).parent / "baseline.json"
 HARD = dict(bbox=0.02, vol=0.5, p99=0.05, mx=0.2)
@@ -45,11 +42,15 @@ EXPECTED = ["T111", "T212", "T313", "T3135", "T323", "T1215",
 W = '"{}"'
 SOUNDNESS = [
     ("half_w_1.5x1x1",     dict(width_lu=1.5, height_lu=1, depth_lu=1)),
+    # typed off the half-LU step: must round to 1.5 x 1 x 1, same as above
+    ("offstep_1.3x1.1x0.8", dict(width_lu=1.3, height_lu=1.1, depth_lu=0.8)),
     ("half_h_2x1.5x2",     dict(width_lu=2, height_lu=1.5, depth_lu=2)),
     ("half_both_2.5x1.5x1.5", dict(width_lu=2.5, height_lu=1.5, depth_lu=1.5)),
     ("thin_1.5x0.5x1",     dict(width_lu=1.5, height_lu=0.5, depth_lu=1)),
     ("deep_1x1x4",         dict(width_lu=1, height_lu=1, depth_lu=4)),
     ("wide_4x1x1",         dict(width_lu=4, height_lu=1, depth_lu=1)),
+    # pads far from the origin: some positions once exported broken pocket slits
+    ("long_1x7x1",         dict(width_lu=1, height_lu=7, depth_lu=1)),
     ("mixed_walls_2x2x1",  dict(width_lu=2, height_lu=2, depth_lu=1,
                                 front_wall=W.format("topped"), back_wall=W.format("topless"),
                                 left_wall=W.format("simple"), right_wall=W.format("topped"))),
@@ -77,21 +78,8 @@ def render(name, params, scad):
     for k, v in params.items():
         args += ["-D", f"{k}={v}"]
     r = subprocess.run(args, capture_output=True, text=True, timeout=3600)
-    return (stl, None) if stl.exists() else (None, r.stderr[-2000:])
-
-
-def audit(stl):
-    m = trimesh.load_mesh(stl)
-    m.merge_vertices()
-    _, c = np.unique(m.edges_sorted, axis=0, return_counts=True)
-    _, counts = np.unique(np.sort(m.faces, axis=1), axis=0, return_counts=True)
-    return dict(watertight=bool(m.is_watertight), bodies=int(m.body_count),
-                bad_edges=int((c != 2).sum()), dup_faces=int((counts > 1).sum()),
-                extents=[round(float(v), 4) for v in m.extents], volume=round(float(m.volume), 3))
-
-
-def clean(a):
-    return a["watertight"] and a["bodies"] == 1 and a["bad_edges"] == 0 and a["dup_faces"] == 0
+    problems = render_problems(r.stderr)
+    return (stl, None, problems) if stl.exists() else (None, r.stderr[-2000:], problems)
 
 
 def collapse(row):
@@ -111,6 +99,9 @@ def main():
             print("refusing to lock a baseline from an alternate SCAD")
             return 2
         print(f"*** checking ALTERNATE SCAD: {scad.name} ***")
+    if not update and not BASELINE.exists():
+        print("no baseline; run with --update-baseline first")
+        return 2
     current, failures, sound_now = {}, [], {}
 
     missing = [k for k in EXPECTED if not (STL_DIR / fname(k)).is_file()]
@@ -126,7 +117,9 @@ def main():
     print(f"REFERENCE MATCH ({len(present)} of {len(EXPECTED)} references)")
     print("=" * 78)
     for key in present:
-        p, secs = generate(key, scad)
+        p, secs, problems = generate(key, scad)
+        for line in problems:
+            failures.append(f"{key}: render message: {line}")
         if p is None:
             failures.append(f"{key}: render failed")
             continue
@@ -140,10 +133,7 @@ def main():
         if not clean(a):
             failures.append(f"{key}: mesh not a clean single shell: {a}")
 
-    base_raw = {} if update or not BASELINE.exists() else json.loads(BASELINE.read_text(encoding="utf-8"))
-    if not update and not BASELINE.exists():
-        print("no baseline; run with --update-baseline first")
-        return 2
+    base_raw = {} if update else json.loads(BASELINE.read_text(encoding="utf-8"))
     base = base_raw.get("models", {})
     for k in base_raw.get("missing_at_lock", []):
         if k in current:
@@ -172,7 +162,9 @@ def main():
         print("=" * 78)
         golden = base_raw.get("soundness", {})
         for name, params in SOUNDNESS:
-            stl, err = render(name, params, scad)
+            stl, err, problems = render(name, params, scad)
+            for line in problems:
+                failures.append(f"soundness/{name}: render message: {line}")
             if stl is None:
                 failures.append(f"soundness/{name}: render failed")
                 print(f"  {name:24} RENDER FAILED\n{err}")
@@ -194,10 +186,16 @@ def main():
                 failures.append(f"soundness/{name}: {a}")
 
     if update:
+        # a baseline locked over a failure would hide it from every later run
+        if failures:
+            print(f"NOT RELOCKED - {len(failures)} problem(s):")
+            for f in failures:
+                print(f"  - {f}")
+            return 1
         BASELINE.write_text(json.dumps(dict(models=current, missing_at_lock=missing, soundness=sound_now),
                                        indent=2), encoding="utf-8")
         print(f"baseline relocked: {len(current)} reference(s), {len(sound_now)} soundness config(s)")
-        return 1 if failures else 0
+        return 0
 
     print("=" * 78)
     if failures:

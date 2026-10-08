@@ -1,0 +1,305 @@
+{
+  "models": {
+    "T111": {
+      "bbox": 0.0,
+      "vol": 0.014271724539641742,
+      "p99": 0.010866504310791196,
+      "mx": 0.018820375133971876,
+      "render_s": 18.3,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "T212": {
+      "bbox": 0.0,
+      "vol": 0.010888991945384646,
+      "p99": 0.010487296493654812,
+      "mx": 0.018823932619235487,
+      "render_s": 34.6,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "T313": {
+      "bbox": 0.0,
+      "vol": 0.009349305564011149,
+      "p99": 0.010000095367431516,
+      "mx": 0.018867754649763355,
+      "render_s": 55.6,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "T3135": {
+      "bbox": 0.0,
+      "vol": 0.008686223725023364,
+      "p99": 0.009483274283938675,
+      "mx": 0.018867754649763355,
+      "render_s": 59.3,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "T323": {
+      "bbox": 0.0,
+      "vol": 0.011245277351273156,
+      "p99": 0.010499874208694488,
+      "mx": 0.018867754649763355,
+      "render_s": 85.2,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "T1215": {
+      "bbox": 0.0,
+      "vol": 0.012645623186111558,
+      "p99": 0.01067140082720769,
+      "mx": 0.018820375133971876,
+      "render_s": 30.6,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "O111": {
+      "bbox": 0.0,
+      "vol": 0.01609776374769417,
+      "p99": 0.011910195858839241,
+      "mx": 0.018820375133971876,
+      "render_s": 17.4,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "O212": {
+      "bbox": 0.0,
+      "vol": 0.011764695604232062,
+      "p99": 0.01123162056473112,
+      "mx": 0.018823932619235487,
+      "render_s": 33.4,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "O323": {
+      "bbox": 0.0,
+      "vol": 0.011760501960189223,
+      "p99": 0.010679090057694676,
+      "mx": 0.018867754649763355,
+      "render_s": 87.8,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "O1215": {
+      "bbox": 0.0,
+      "vol": 0.013766816332103806,
+      "p99": 0.010941277617206445,
+      "mx": 0.018820375133971876,
+      "render_s": 31.8,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "S111": {
+      "bbox": 0.0,
+      "vol": 0.008807242902880253,
+      "p99": 0.010000095367431516,
+      "mx": 0.018820375133971876,
+      "render_s": 13.8,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "S212": {
+      "bbox": 0.0,
+      "vol": 0.005381756278041721,
+      "p99": 0.007841785877190725,
+      "mx": 0.018823932619235487,
+      "render_s": 23.9,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "S323": {
+      "bbox": 0.0,
+      "vol": 0.005988657753038328,
+      "p99": 0.008309733264662023,
+      "mx": 0.018867754649763355,
+      "render_s": 82.9,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "S1215": {
+      "bbox": 0.0,
+      "vol": 0.007306390604442242,
+      "p99": 0.009235434998608578,
+      "mx": 0.018820375133971876,
+      "render_s": 28.4,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    }
+  },
+  "missing_at_lock": [],
+  "soundness": {
+    "half_w_1.5x1x1": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        75.0,
+        50.0,
+        55.0
+      ],
+      "volume": 37385.402
+    },
+    "offstep_1.3x1.1x0.8": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        75.0,
+        50.0,
+        55.0
+      ],
+      "volume": 37385.402
+    },
+    "half_h_2x1.5x2": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        100.0,
+        75.0,
+        105.0
+      ],
+      "volume": 97933.894
+    },
+    "half_both_2.5x1.5x1.5": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        125.0,
+        75.0,
+        80.0
+      ],
+      "volume": 97712.366
+    },
+    "thin_1.5x0.5x1": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        75.0,
+        25.0,
+        55.0
+      ],
+      "volume": 25928.589
+    },
+    "deep_1x1x4": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        50.0,
+        50.0,
+        205.0
+      ],
+      "volume": 75300.569
+    },
+    "wide_4x1x1": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        200.0,
+        50.0,
+        55.0
+      ],
+      "volume": 87171.539
+    },
+    "long_1x7x1": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        50.0,
+        350.0,
+        55.0
+      ],
+      "volume": 148804.911
+    },
+    "mixed_walls_2x2x1": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        100.0,
+        100.0,
+        55.0
+      ],
+      "volume": 78870.331
+    },
+    "simple_2x1x2": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        100.0,
+        50.0,
+        105.0
+      ],
+      "volume": 93618.582
+    },
+    "topless_half_2.5x1.5x1.5": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        125.0,
+        75.0,
+        80.0
+      ],
+      "volume": 96529.413
+    },
+    "simple_half_1.5x2x2.5": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        75.0,
+        100.0,
+        130.0
+      ],
+      "volume": 140490.481
+    }
+  }
+}

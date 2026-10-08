@@ -13,6 +13,9 @@ Mistakes and near misses from building the generators, each with its cause, the 
 - [Size helper geometry from the model](#size-helper-geometry-from-the-model)
 - [Measure the original before changing a deliberate deviation](#measure-the-original-before-changing-a-deliberate-deviation)
 - [Parallel runs need a parent that waits](#parallel-runs-need-a-parent-that-waits)
+- [Check render messages by content, not by prefix](#check-render-messages-by-content-not-by-prefix)
+- [Apply a cut where its feature is defined](#apply-a-cut-where-its-feature-is-defined)
+- [Overlap a loft by exactly its end slab](#overlap-a-loft-by-exactly-its-end-slab)
 
 ## Random sampling hides edge-shaped deviations
 
@@ -100,6 +103,36 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Cause:** on Windows, Git Bash subshells started with `&` keep running after their parent exits, so the parent's exit says nothing about the runs it started.
 
-**Rule:** start parallel runs from one command that ends with `wait`, and before relaunching, list the running `openscad.exe` and `python.exe` processes to find survivors.
+**Rule:** start parallel runs from one command that ends with `wait`, and before relaunching, list the running `openscad.exe` and `python.exe` processes to find survivors. To stop one run, match its own `python.exe` command line: the parent `bash.exe` carries the text of every run it started, so matching on that text also stops runs that should continue.
 
 **Check:** `Get-CimInstance Win32_Process -Filter "Name='openscad.exe'"` lists one process per expected run, each with a different output file.
+
+## Check render messages by content, not by prefix
+
+**What happened:** every shell render printed `PolySet has nonplanar faces. Attempting alternate construction`, from the twisted faces of the thread polyhedron. The comparison harness only reported lines containing `WARNING` or `ERROR`, so the notice went unseen until a reviewer found it.
+
+**Cause:** OpenSCAD 2021.01 prints that notice without a `WARNING` prefix.
+
+**Rule:** list the render messages that mean a render is not clean by their content, and fail the regression gate on any of them.
+
+**Check:** `render_problems()` in the shell's `analysis/compare.py` matches `nonplanar` as well as `WARNING` and `ERROR`, and `regress.py` fails on any match.
+
+## Apply a cut where its feature is defined
+
+**What happened:** on shells whose width or front-to-back size ends in a half LU, the rail channel stopped short of the base wherever it ran over a half-size pad. A Topped Rail channel was then closed at both ends, so no rail could slide in. The meshes were sound and every reference passed, because no reference has a half-LU pad under a channel.
+
+**Cause:** the channel's cut through the pad's foot was made inside the whole-pad builder, so the separate half-pad builder never made it.
+
+**Rule:** make a cut that belongs to a wall feature once, from that feature's own placement, across everything it passes through, rather than inside one of several builders for the parts it crosses.
+
+**Check:** the shell's `pads()` subtracts `channels_low()` from all pads together, and the soundness list in `regress.py` includes half-LU shells with rail channels.
+
+## Overlap a loft by exactly its end slab
+
+**What happened:** after an unrelated change, the 3 x 2 x 3 Topless shell exported with an edge shared by four triangles, enclosing a void 0.009 mm thick inside one pad's central pocket. Separately, a reviewer found broken pocket slits on shells 7 LU or more front to back.
+
+**Cause:** the pocket was built as a prism, a loft made as the hull of two 0.001 mm slabs, and another prism that overlapped the loft by 0.01 mm. Over that overlap the loft was still narrower than the prism, which left a ledge 0.01 mm wide. In the second case, slit ends lay exactly on the pocket's sides. OpenSCAD's internal result was valid in both cases, but its export closed these near-coincident features into voids at some positions and not others.
+
+**Rule:** a solid that continues a loft overlaps it by exactly the loft's end slab, so the overlapping sections are identical; and a cut that would end exactly on another cut's face stops a small, stated distance short of it.
+
+**Check:** the shell generator's `slab` constant sets both the loft slabs and those overlaps, and the soundness list in `regress.py` includes a 1 x 7 x 1 shell, which exported broken slits before the change.

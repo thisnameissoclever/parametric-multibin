@@ -17,21 +17,37 @@ height_lu = 1; // [0.5:0.5:12]
 depth_lu = 2; // [1:0.5:12]
 
 /* [Walls (front faces the front of the build plate)] */
+// Rail channels sit on whole 50 mm cells: a side shorter than 1 LU, and the half-LU end of a side, have none
 front_wall = "topped"; // [topped, topless, simple]
+// Back wall
 back_wall = "topped"; // [topped, topless, simple]
+// Left wall
 left_wall = "topped"; // [topped, topless, simple]
+// Right wall
 right_wall = "topped"; // [topped, topless, simple]
 
 /* [Hidden] */
 $fs = 0.25;
 $fa = 2;
 eps = 0.01;
+// thickness of the end slabs of a loft. A solid that continues a loft overlaps
+// it by exactly one slab, so the overlapping sections are identical: a larger
+// overlap leaves a 0.01 mm ledge where the loft is still narrower, which
+// OpenSCAD's export can close into a void at some positions.
+slab = 0.001;
 arc_fn = 32;                     // facets on the small pocket arcs (chord error 0.011 mm)
 
 U  = 50;
-NX = max(1, width_lu);
-NY = max(0.5, height_lu);
-NZ = max(1, depth_lu);
+// Shells are built from 25 mm and 50 mm cells, so each size is rounded to the
+// nearest half LU (a size typed in off the 0.5 step would otherwise misplace
+// the base) and held to the slider's minimum.
+function half_lu(v, lo) = max(lo, round(2 * v) / 2);
+NX = half_lu(width_lu, 1);
+NY = half_lu(height_lu, 0.5);
+NZ = half_lu(depth_lu, 1);
+for (v = [["width_lu", width_lu, NX], ["height_lu", height_lu, NY], ["depth_lu", depth_lu, NZ]])
+    if (v[1] != v[2])
+        echo(str("NOTE: ", v[0], " = ", v[1], " is not on the half-LU grid; using ", v[2], "."));
 
 X0 = -U/2;  X1 = U*NX - U/2;     // outer faces
 Y0 = -U/2;  Y1 = U*NY - U/2;
@@ -121,11 +137,12 @@ module oct_prism(x0, x1, y0, y1, c, z0, z1)
 function oct_in(x0, x1, y0, y1, c, d) =
     octagon(x0 + d, x1 - d, y0 + d, y1 - d, c - d * (2 - sqrt(2)));
 
-// loft between two octagons at z0 and z1 (both must be convex)
+// loft between two convex polygons at z0 and z1, ending in slabs of
+// thickness slab
 module oct_loft(a, b, z0, z1)
     hull() {
-        translate([0, 0, z0]) linear_extrude(height = 0.001) polygon(a);
-        translate([0, 0, z1 - 0.001]) linear_extrude(height = 0.001) polygon(b);
+        translate([0, 0, z0]) linear_extrude(height = slab) polygon(a);
+        translate([0, 0, z1 - slab]) linear_extrude(height = slab) polygon(b);
     }
 
 // ------------------------------------------------------------------ body
@@ -177,7 +194,7 @@ module cell_pad(cx, cy, wx = U, wy = U) {
             // 0.4 mm chamfer on the bottom edge
             oct_loft(oct_in(cx - hx, cx + hx, cy - hy, cy + hy, pad_c, 0.4),
                      octagon(cx - hx, cx + hx, cy - hy, cy + hy, pad_c), 0, 0.4);
-            translate([cx - U, cy - U, 0.4 - eps]) cube([2 * U, 2 * U, foot_z]);
+            translate([cx - U, cy - U, 0.4 - slab]) cube([2 * U, 2 * U, foot_z]);
         }
     }
 }
@@ -228,11 +245,11 @@ module cavity() {
     // 1 mm 45-degree chamfer where the floor meets the walls
     oct_loft(oct_in(xi0, xi1, yi0, yi1, c_in, 1),
              octagon(xi0, xi1, yi0, yi1, c_in), floor_z, floor_z + 1);
-    oct_prism(xi0, xi1, yi0, yi1, c_in, floor_z + 1 - eps, ZT - 1.2 + eps);
+    oct_prism(xi0, xi1, yi0, yi1, c_in, floor_z + 1 - slab, ZT - 1.2 + slab);
     // inner rim chamfer: 1.6 out over the top 1.2
     oct_loft(octagon(xi0, xi1, yi0, yi1, c_in),
-             oct_in(xi0, xi1, yi0, yi1, c_in, -1.6), ZT - 1.2, ZT + eps);
-    translate([0, 0, ZT]) linear_extrude(height = 1)
+             oct_in(xi0, xi1, yi0, yi1, c_in, -1.6), ZT - 1.2, ZT);
+    translate([0, 0, ZT - slab]) linear_extrude(height = 1 + slab)
         polygon(oct_in(xi0, xi1, yi0, yi1, c_in, -1.6));
 }
 
@@ -537,20 +554,19 @@ function point_prism(b) =
      [-8.5, -2.479], [-8.5, -9.521]];
 module central_pocket() {
     // flared octagon: half 6.0 at z = 0.4 growing 45 degrees to 8.5 at z = 2.9
-    oct_prism(-6.0, 6.0, -6.0, 6.0, 3.515, -1, 0.4 + eps);
+    oct_prism(-6.0, 6.0, -6.0, 6.0, 3.515, -1, 0.4 + slab);
     oct_loft(octagon(-6.0, 6.0, -6.0, 6.0, 3.515), octagon(-8.5, 8.5, -8.5, 8.5, 4.979), 0.4, 2.9);
-    oct_prism(-8.5, 8.5, -8.5, 8.5, 4.979, 2.9 - eps, 3.2);
+    oct_prism(-8.5, 8.5, -8.5, 8.5, 4.979, 2.9 - slab, 3.2);
     // pointed-top prism toward -y, its far edge stepping out 45 degrees at 1.8 .. 2.2
-    translate([0, 0, -1]) linear_extrude(height = 2.8 + eps) polygon(point_prism(-14.5));
-    hull() {
-        translate([0, 0, 1.8]) linear_extrude(height = 0.001) polygon(point_prism(-14.5));
-        translate([0, 0, 2.2 - 0.001]) linear_extrude(height = 0.001) polygon(point_prism(-14.9));
-    }
-    translate([0, 0, 2.2 - eps]) linear_extrude(height = 1.0 + eps) polygon(point_prism(-14.9));
-    // ceiling slits over the pointed prism, every 1 mm
+    translate([0, 0, -1]) linear_extrude(height = 2.8 + slab) polygon(point_prism(-14.5));
+    oct_loft(point_prism(-14.5), point_prism(-14.9), 1.8, 2.2);
+    translate([0, 0, 2.2 - slab]) linear_extrude(height = 1.0 + slab) polygon(point_prism(-14.9));
+    // ceiling slits over the pointed prism, every 1 mm. They stop 0.01 short of
+    // the prism's sides: slit ends flush with those faces made OpenSCAD's export
+    // seal some slits into voids at some pad positions.
     translate([0, 0, 3.0]) linear_extrude(height = 0.4)
         intersection() {
-            polygon(point_prism(-14.9));
+            offset(delta = -0.01) polygon(point_prism(-14.9));
             for (k = [0:8]) translate([-10, -14.2 + k]) square([20, 0.1]);
         }
     // a plate up to 3.4 in the middle band, a square to 3.6, then the octagon to 5.2
@@ -562,20 +578,15 @@ module central_pocket() {
 }
 
 // One pad with every feature cut, built at the origin so that identical pads
-// share one evaluation. sides lists the kind of each pad side in the order
-// +y, -x, -y, +x: 0 = faces a neighbouring pad, 1 = outside with a plain wall,
-// 2 = outside with a rail channel. Side clip pockets only open onto the
-// outside of the shell; a side facing a neighbouring pad has none.
-module pad_variant(sides)
+// share one evaluation. outward lists, for each pad side in the order +y, -x,
+// -y, +x, whether it faces the outside of the shell. Side clip pockets only
+// open onto the outside; a side facing a neighbouring pad has none.
+module pad_variant(outward)
     difference() {
         pad_core();
-        for (k = [0:3]) rotate([0, 0, 90 * k]) {
-            if (sides[k] > 0) {
-                side_pocket(7.5);
-                side_pocket(-7.5);
-            }
-            // the bottom of the rail channel reaches down into the pad's foot
-            if (sides[k] == 2) translate([0, U/2, 0]) rotate([0, 0, 180]) channel_low();
+        for (k = [0:3]) if (outward[k]) rotate([0, 0, 90 * k]) {
+            side_pocket(7.5);
+            side_pocket(-7.5);
         }
     }
 
@@ -601,21 +612,24 @@ module channel_low()
         translate([-20, -2, -2]) cube([40, wall + 4, floor_z + 2.5]);
     }
 
-function side_kind(outside, wall_kind) = !outside ? 0 : wall_kind == "simple" ? 1 : 2;
-
+// every pad, with the bottom of each rail channel cut down through the pads'
+// feet, as through the floor, whether the pad under it is whole or half
 module pads()
-    for (i = [0:nx_cells - 1], j = [0:ny_cells - 1]) {
-        c = cols[i];
-        r = rows[j];
-        translate([c[0], r[0], 0])
-            if (c[1] == U && r[1] == U)
-                pad_variant([side_kind(j == ny_cells - 1, back_wall), side_kind(i == 0, left_wall),
-                             side_kind(j == 0, front_wall), side_kind(i == nx_cells - 1, right_wall)]);
-            else
-                half_pad(c[1], r[1]);
+    difference() {
+        for (i = [0:nx_cells - 1], j = [0:ny_cells - 1]) {
+            c = cols[i];
+            r = rows[j];
+            translate([c[0], r[0], 0])
+                if (c[1] == U && r[1] == U)
+                    pad_variant([j == ny_cells - 1, i == 0, j == 0, i == nx_cells - 1]);
+                else
+                    half_pad(c[1], r[1]);
+        }
+        channels_low();
     }
 
-// a pad on a half-LU cell: the holes on the 25 mm grid and the edge notches
+// a pad on a half-LU cell: the holes on the 25 mm grid, and the edge notches on
+// its 50 mm sides (a notch is wider than the flat part of a 25 mm side)
 module half_pad(wx, wy)
     difference() {
         intersection() {
@@ -624,7 +638,7 @@ module half_pad(wx, wy)
         }
         for (dx = wx == U ? [-12.5, 12.5] : [0], dy = wy == U ? [-12.5, 12.5] : [0])
             translate([dx, dy, 0]) threaded_hole();
-        for (k = [0:3]) rotate([0, 0, 90 * k])
+        for (k = [0:3]) if ((k % 2 == 0 ? wx : wy) == U) rotate([0, 0, 90 * k])
             edge_notch((k % 2 == 0 ? wy : wx) / 2 - pad_in);
     }
 
@@ -657,11 +671,12 @@ module thread_ridge(z0, turns) {
     sec = thr_section();
     pts = [for (i = [0:n]) let (a = 360 * i / thr_steps, dz = z0 + thr_p * i / thr_steps)
                for (q = sec) [q[0] * cos(a), q[0] * sin(a), q[1] + dz]];
+    // each side face twists along the helix, so it is split into two triangles
     faces = concat(
         [[3, 2, 1, 0]],
         [[4 * n, 4 * n + 1, 4 * n + 2, 4 * n + 3]],
         [for (i = [0:n - 1], k = [0:3])
-            let (a = 4 * i + k, b = 4 * i + (k + 1) % 4) [a, b, b + 4, a + 4]]);
+            let (a = 4 * i + k, b = 4 * i + (k + 1) % 4) each [[a, b, b + 4], [a, b + 4, a + 4]]]);
     polyhedron(points = pts, faces = faces);
 }
 
