@@ -1,0 +1,7 @@
+# Analysis tooling only. The SCAD generators need nothing but OpenSCAD 2021.01.
+numpy==2.5.2
+trimesh==5.0.0
+rtree==1.4.1
+scipy==1.18.1
+shapely==2.1.2
+networkx==3.6.1

@@ -1,0 +1,15 @@
+# Generated meshes, renders and agent work notes
+.local-build/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Machine-specific paths (copy local-paths.example.json to start one)
+local-paths.json
+
+# MultiBuild's original reference files must never be committed: their
+# license forbids redistribution. Generated meshes belong in .local-build/.
+*.stl
+*.3mf

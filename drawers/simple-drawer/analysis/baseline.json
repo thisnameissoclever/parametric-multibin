@@ -1,0 +1,209 @@
+{
+  "models": {
+    "n111": {
+      "bbox": 7.105427357601002e-15,
+      "vol": 0.0038442278691723447,
+      "p99": 0.0013290474741132906,
+      "mx": 0.011283527010422602,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "s111": {
+      "bbox": 7.105427357601002e-15,
+      "vol": 0.0037953374602383233,
+      "p99": 0.0013290385609044462,
+      "mx": 0.011283527010422602,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "m212": {
+      "bbox": 7.105427357601002e-15,
+      "vol": 0.002700460356522598,
+      "p99": 0.001328931160723696,
+      "mx": 0.011038844139026522,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "c212": {
+      "bbox": 7.105427357601002e-15,
+      "vol": 0.003936962688539406,
+      "p99": 0.0012824030162212725,
+      "mx": 0.011284813451532781,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "g212": {
+      "bbox": 7.105427357601002e-15,
+      "vol": 0.00459789847897185,
+      "p99": 0.0013191342095132954,
+      "mx": 0.011284813451532781,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "L323": {
+      "bbox": 1.4210854715202004e-14,
+      "vol": 0.0018467742660158333,
+      "p99": 0.0008174250167006947,
+      "mx": 0.011210069603107595,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "c313": {
+      "bbox": 7.105427357601002e-15,
+      "vol": 0.004395689922440534,
+      "p99": 0.0012908522019422883,
+      "mx": 0.1333358764648409,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "c3135": {
+      "bbox": 7.105427357601002e-15,
+      "vol": 0.004186571714355027,
+      "p99": 0.0012735618757655643,
+      "mx": 0.1333358764648409,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    }
+  },
+  "missing_at_lock": [
+    "L332"
+  ],
+  "soundness": {
+    "plain_1x1x1": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        43.0,
+        57.0,
+        43.0
+      ],
+      "volume": 12771.91
+    },
+    "half_w_1.5": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        68.0,
+        57.0,
+        43.0
+      ],
+      "volume": 18192.163
+    },
+    "half_h_1.5": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        93.0,
+        107.0,
+        68.0
+      ],
+      "volume": 46667.807
+    },
+    "tall_4LU": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        93.0,
+        107.0,
+        193.0
+      ],
+      "volume": 105823.153
+    },
+    "short_0.5LU": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        93.0,
+        107.0,
+        18.0
+      ],
+      "volume": 22649.395
+    },
+    "grid_4x3": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        143.0,
+        157.0,
+        93.0
+      ],
+      "volume": 169404.376
+    },
+    "low_dividers": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        143.0,
+        107.0,
+        93.0
+      ],
+      "volume": 89954.67
+    },
+    "magnet_divided": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        143.0,
+        107.0,
+        93.0
+      ],
+      "volume": 121599.967
+    },
+    "tall_narrow_1x3x1": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        43.0,
+        57.0,
+        143.0
+      ],
+      "volume": 34990.83
+    },
+    "offgrid_h_0.75": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        93.0,
+        107.0,
+        30.5
+      ],
+      "volume": 28547.7
+    }
+  }
+}
