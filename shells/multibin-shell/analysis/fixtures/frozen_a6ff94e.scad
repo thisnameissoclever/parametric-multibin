@@ -380,26 +380,18 @@ module inner_recesses() {
         for (k = [0:1:f[1] - 1]) place_inner(f[0], U * k) for (m = [0, 1]) mirror([m, 0, 0]) {
             catch_slot(catch_z0);
             for (zb = zbands) catch_slot(zb - catch_up);
+            // a wall with an open rail top only has short recesses at the rim
+            if (f[2] == "topless") catch_slot(ZT - groove_up);
         }
         // seam grooves between LUs along the face, one per 50 mm band (a partial
-        // top band included), each ending 7 mm below the top of its band. On a
-        // simple wall the groove in a partial top band is short, starting at the
-        // upper catch slot height (measured on the 1x2x1.5 Simple Walls shell).
+        // top band included), each ending 7 mm below the top of its band
         for (sk = seams(f[3])) place_inner(f[0], sk)
             for (b = [0:1:ceil(NZ - eps) - 1])
-                seam_groove(f[2] == "simple" && U * (b + 1) + 5 > ZT + eps ? ZT - catch_up : catch_z0 + U * b,
-                            min(U * (b + 1) + 5, ZT) - 7);
-        // a groove along the whole flat inner face at the rim, except that an open
-        // (topless) rail wall leaves it out behind each rail channel. rim lists
-        // the groove's segments as start, end pairs along the face; each segment
-        // is placed at its own midpoint because the back and left face frames
-        // run backwards.
-        fl = f[5] / 2 - wall - c_in;
-        rim = f[2] == "topless"
-            ? concat([f[4] - fl], [for (k = [0:1:f[1] - 1]) each [U * k - catch_t0, U * k + catch_t0]], [f[4] + fl])
-            : [f[4] - fl, f[4] + fl];
-        for (i = [0:2:len(rim) - 2]) place_inner(f[0], (rim[i] + rim[i + 1]) / 2)
-            wall_recess(ZT - groove_up, -(rim[i + 1] - rim[i]) / 2, (rim[i + 1] - rim[i]) / 2);
+                seam_groove(catch_z0 + U * b, min(U * (b + 1) + 5, ZT) - 7);
+        // a topped rail wall has a groove along its whole inner face at the rim
+        // (placed at the face centre: the back and left face frames run backwards)
+        if (f[2] == "topped") place_inner(f[0], f[4])
+            wall_recess(ZT - groove_up, -(f[5] / 2 - wall - c_in), f[5] / 2 - wall - c_in);
     }
 }
 
@@ -412,16 +404,11 @@ module oct_slab(a, b, c, n)
         polygon([[-a + c, -b], [a - c, -b], [a, -b + c], [a, b - c],
                  [a - c, b], [-a + c, b], [-a, b - c], [-a, -b + c]]);
 
-// the 0.2 mm 45-degree chamfer around a slot's outer opening, started 0.1
-// outside the face so the cut overlaps it: the 6 x 2 opening grown by 0.3
-module slot_mouth()
-    hull() { oct_slab(3.3, 1.3, 0.4 + 0.3 * (2 - sqrt(2)), -0.1); oct_slab(3.0, 1.0, 0.4, 0.2); }
-
 // waisted through-slot at a seam: 6 x 2 at both faces, 4 wide in the middle.
 // Face frame: t across, n from the outer face inward, z up; centred on z = zc
 module seam_slot(zc)
     translate([0, 0, zc]) {
-        slot_mouth();
+        hull() { oct_slab(3.2, 1.2, 0.517, -0.1); oct_slab(3.0, 1.0, 0.4, 0.2); }
         hull() { oct_slab(3.0, 1.0, 0.4, 0.2);   oct_slab(3.0, 1.0, 0.4, 0.8); }
         hull() { oct_slab(2.2, 1.0, 0.318, 0.8); oct_slab(2.0, 1.0, 0.4, 1.0); }
         hull() { oct_slab(2.0, 1.0, 0.4, 1.0);   oct_slab(2.0, 1.0, 0.4, 1.8); }
@@ -435,7 +422,7 @@ module seam_slot(zc)
 // exists there
 module corner_slot(zc)
     translate([0, 0, zc]) {
-        slot_mouth();
+        hull() { oct_slab(3.2, 1.2, 0.517, -0.1); oct_slab(3.0, 1.0, 0.4, 0.2); }
         hull() { oct_slab(3.0, 1.0, 0.4, 0.2);   oct_slab(3.0, 1.0, 0.4, 0.8); }
         hull() { oct_slab(2.2, 1.0, 0.318, 0.8); oct_slab(2.0, 1.0, 0.4, 1.0); }
         hull() { oct_slab(2.0, 1.0, 0.4, 1.0);   oct_slab(2.0, 1.0, 0.4, 1.8); }

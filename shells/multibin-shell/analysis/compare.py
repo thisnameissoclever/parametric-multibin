@@ -39,8 +39,19 @@ def params(key):
                 front_wall=w, back_wall=w, left_wall=w, right_wall=w)
 
 
+def out_for(scad=None):
+    """Output folder for renders of a SCAD file. A file other than the generator
+    gets its own folder, so a run against it never overwrites, or races, the
+    generator's own renders."""
+    if scad is None or Path(scad).resolve() == SCAD.resolve():
+        return OUT
+    d = OUT / "alt" / Path(scad).stem
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def generate(key, scad=None):
-    out = OUT / f"{key}.stl"
+    out = out_for(scad) / f"{key}.stl"
     args = [OPENSCAD, "-o", str(out), str(scad or SCAD)]
     for k, v in params(key).items():
         args += ["-D", f"{k}={v}"]

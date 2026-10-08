@@ -29,7 +29,7 @@ import numpy as np
 import trimesh
 
 import compare
-from compare import OUT, OPENSCAD, generate, metrics
+from compare import OPENSCAD, generate, metrics, out_for
 from refs import STL_DIR, SIZES, WALLS, fname
 
 BASELINE = Path(__file__).parent / "baseline.json"
@@ -56,11 +56,19 @@ SOUNDNESS = [
     ("simple_2x1x2",       dict(width_lu=2, height_lu=1, depth_lu=2,
                                 front_wall=W.format("simple"), back_wall=W.format("simple"),
                                 left_wall=W.format("simple"), right_wall=W.format("simple"))),
+    # rim grooves crossing seams beside a half cell, under a partial top band
+    ("topless_half_2.5x1.5x1.5", dict(width_lu=2.5, height_lu=1.5, depth_lu=1.5,
+                                front_wall=W.format("topless"), back_wall=W.format("topless"),
+                                left_wall=W.format("topless"), right_wall=W.format("topless"))),
+    # the short partial-band seam groove of simple walls beside a half cell
+    ("simple_half_1.5x2x2.5", dict(width_lu=1.5, height_lu=2, depth_lu=2.5,
+                                front_wall=W.format("simple"), back_wall=W.format("simple"),
+                                left_wall=W.format("simple"), right_wall=W.format("simple"))),
 ]
 
 
 def render(name, params, scad):
-    d = OUT / "soundness"
+    d = out_for(scad) / "soundness"
     d.mkdir(parents=True, exist_ok=True)
     stl = d / f"{name}.stl"
     if stl.exists():

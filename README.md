@@ -20,6 +20,7 @@ Sizes are in LU, MultiBoard's 50 mm layout unit.
 | Part | File | Settings |
 |---|---|---|
 | Simple drawer insert | [`drawers/simple-drawer/MultiBin Simple Drawer - Parametric.scad`](drawers/simple-drawer/MultiBin%20Simple%20Drawer%20-%20Parametric.scad) | Width and depth 1 to 12 LU and height 0.5 to 12 LU, all in 0.5 LU steps; 1 to 12 compartments across and front to back; divider height; magnet opening; label holder none, small or large |
+| MultiBin shell, Standard Base | [`shells/multibin-shell/MultiBin Shell - Parametric.scad`](shells/multibin-shell/MultiBin%20Shell%20-%20Parametric.scad) | The same three sizes as the drawer that fits inside: width 1 to 12 LU, drawer height 0.5 to 12 LU (front to back as printed) and drawer depth 1 to 12 LU (height as printed), all in 0.5 LU steps; Topped Rail, Topless Rail or Simple wall on each side |
 
 Planned work for each part is in [`docs/roadmap.md`](docs/roadmap.md).
 
@@ -29,7 +30,7 @@ In MakerWorld's Parametric Model Maker, open the `.scad` file in a text editor, 
 
 In OpenSCAD, open the file, choose **Window > Customizer**, set the parameters, then render (F6) and export an STL.
 
-Each generator prints a `WARNING` or `NOTE` line in the console when it adjusts a request, for example when a feature needs a taller part than the one requested.
+A generator prints a `WARNING` or `NOTE` line in the console when it adjusts a request, for example when a feature needs a taller part than the one requested.
 
 ## How the generators are verified
 
@@ -66,6 +67,8 @@ The regression baselines were recorded with Python 3.12.10 and the package versi
 |---|---|
 | `drawers/simple-drawer/` | The drawer generator and its records |
 | `drawers/simple-drawer/analysis/` | Comparison harness, regression gate and baseline, and the measurement scripts cited as evidence in `DEVIATIONS.md` |
+| `shells/multibin-shell/` | The shell generator and its records |
+| `shells/multibin-shell/analysis/` | The same tools for the shell |
 | `docs/` | Verification method, roadmap, lessons learned |
 | `tools/mbpaths.py` | Resolves the OpenSCAD and reference-file locations for each machine |
 
