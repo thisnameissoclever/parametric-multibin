@@ -25,6 +25,12 @@ SIZES = {
     "323": (3, 2, 3), "1215": (1, 2, 1.5),
 }
 
+# every reference shell the verification expects (MultiBuild publishes 3x1x3
+# and 3x1x3.5 only with Topped Rail walls)
+EXPECTED = ["T111", "T212", "T313", "T3135", "T323", "T1215",
+            "O111", "O212", "O323", "O1215",
+            "S111", "S212", "S323", "S1215"]
+
 
 def fname(key):
     wall, size = key[0], key[1:]

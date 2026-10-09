@@ -1,13 +1,15 @@
 # DEVIATIONS - known differences between the remake and MultiBuild's shells
 
-This file lists every known difference between `MultiBin Shell - Parametric.scad` and MultiBuild's shell STL files, and every rule the generator applies where MultiBuild publishes no example. Evidence commands run with `.venv\Scripts\python.exe` from the `analysis` folder. The reference files live in the folder that `local-paths.json` names for `shell` (see `tools/mbpaths.py`), and `python compare.py KEY` writes each render to `.local-build\out\shell\KEY.stl` at the repository root.
+This file lists every known difference between `MultiBin Shell - Parametric.scad` and MultiBuild's shell STL files, and every rule the generator applies where MultiBuild publishes no example.
+
+Evidence commands run from the `analysis` folder with the repository's Python environment, `..\..\..\.venv\Scripts\python.exe`, written below as `python`. The reference files live in the folder that `local-paths.json` names for `shell` (see `tools/mbpaths.py`). `python compare.py KEY` writes each render to `.local-build\out\shell\KEY.stl` at the repository root, which is `..\..\..\.local-build\out\shell\KEY.stl` from the `analysis` folder.
 
 Entries starting with M are measured surface differences, Q entries are quirks of the originals that the generator reproduces, and P entries are rules for configurations with no original.
 
 ## Contents
 
 - [M1. Faceting of the threaded holes, up to 0.02 mm](#m1-faceting-of-the-threaded-holes-up-to-002-mm)
-- [M2. Zero-area triangles in OpenSCAD's export](#m2-zero-area-triangles-in-openscads-export)
+- [M2. Export artifacts from OpenSCAD](#m2-export-artifacts-from-openscad)
 - [M3. Pocket ceiling slits stop 0.01 mm short](#m3-pocket-ceiling-slits-stop-001-mm-short)
 - [Q1. Short seam groove in a Simple wall's partial top band](#q1-short-seam-groove-in-a-simple-walls-partial-top-band)
 - [P1. Half-LU cells](#p1-half-lu-cells)
@@ -22,23 +24,29 @@ Evidence: after `python compare.py T212`, `python worst_points.py T212 ..\..\..\
 
 Left as is. The threads dominate render time, and finer facets would slow every render for a difference under a tenth of a 0.2 mm print layer.
 
-## M2. Zero-area triangles in OpenSCAD's export
+## M2. Export artifacts from OpenSCAD
 
-Every exported shell contains some triangles whose three corners lie on one line, so they have no area; the references have none. OpenSCAD 2021.01 writes them where a face's edge meets a vertex of a neighbouring face: it splits that edge at the vertex and fills the split with a flat sliver triangle. They keep every edge shared by exactly two faces, so the mesh stays closed, and they do not change the shape. The drawer generator's exports contain them too.
+OpenSCAD 2021.01's STL export leaves three kinds of artifact that the references do not have. None changes the shape by more than a millionth of a millimetre.
 
-Evidence: `python compare.py T111` prints the count for that render on a line starting `[T111] zero-area triangles in the export`, and `regress.py` checks that every render is watertight, one body, and has every edge shared by exactly two faces.
+- Zero-area triangles, whose three corners lie on one line. OpenSCAD writes them where a face's edge meets a vertex of a neighbouring face: it splits that edge at the vertex and fills the split with a flat sliver. They keep every edge shared by exactly two faces, so the mesh stays closed.
+- Pairs of separate vertices less than 0.001 mm apart.
+- A few pairs of triangles that cross each other by less than 0.000001 mm, where coordinates rounded on export put a vertex a hair through a neighbouring face. They occur, for example, where the threaded holes' entry cones meet the threads, at the floor gaps between rows of pads, and around the corner slots.
 
-Left as is: the generator cannot control how OpenSCAD triangulates its output. A slicer may report these triangles as degenerate facets when it imports the file; how each slicer treats them has not been tested here.
+The drawer generator's exports contain zero-area triangles too.
+
+Evidence: after `python compare.py T111`, `python export_check.py ..\..\..\.local-build\out\shell\T111.stl` reports 112 zero-area triangles, 46 vertex pairs closer than 0.001 mm and 4 crossing triangle pairs with a deepest overlap of 4.7e-07 mm. The same command on the 1x1x1 Topped Rail reference reports none of the three. `regress.py` checks that every render is watertight and one body, with every edge shared by exactly two faces.
+
+Left as is: the generator cannot control how OpenSCAD triangulates and rounds its output. A slicer may report these triangles as degenerate facets when it imports the file; how each slicer treats them has not been tested here.
 
 ## M3. Pocket ceiling slits stop 0.01 mm short
 
-The nine 0.1 mm slits in the ceiling of each pad's central pocket run across the pocket's pointed prism. In the references they end on the prism's sides. In the generator they stop 0.01 mm short of those sides. With ends flush with the sides, OpenSCAD 2021.01's export sealed some slits into closed voids, with edges shared by four triangles, for pads at some positions far from the origin, for example on shells 7 LU or more front to back and on 12 LU wide shells.
+The nine 0.1 mm slits in the ceiling of each pad's central pocket run across the pocket's seven-sided prism. In the references they end on the prism's sides. In the generator they stop 0.01 mm short of those sides. With ends flush with the sides, OpenSCAD 2021.01's export sealed some slits into closed voids, with edges shared by four triangles, for pads at some positions far from the origin, for example on shells 7 LU or more front to back and on 12 LU wide shells.
 
-Evidence: the soundness section of `regress.py` renders a 1 x 7 x 1 shell, which exported broken slits before the change, and checks that it is a single sound body. The 0.01 mm difference is below the faceting differences in M1.
+Evidence: the soundness section of `regress.py` renders 1 x 7 x 1 and 12 x 1 x 1 shells, which exported broken slits before the change, and checks that each is a single sound body. The 0.01 mm difference is below the faceting differences in M1.
 
 ## Q1. Short seam groove in a Simple wall's partial top band
 
-On a shell whose height Z is not a whole number of LU, the top 50 mm band is cut short by the rim. On the Topped Rail and Topless Rail walls of the 1x2x1.5 shells, the vertical seam groove in that band runs from 13.3 above the band's base, z 63.3, to 7 below the rim, z 73.0. On the Simple Walls 1x2x1.5 shell the same groove starts 9.2 below the rim, at z 70.8, the height of the upper catch slots, and ends at z 73.0 as on the other two. Its section matches the other seam grooves: 0.4 deep, half width 0.5 at the floor, a 1:2 rise at the bottom and 45 degrees at the top.
+On a shell whose height Z is not a whole number of LU, the rim cuts the top 50 mm band short. In band b (counting from 0), a seam groove normally runs from z 13.3 + 50b to 7 below the top of the band or the rim. On the Topped Rail and Topless Rail walls of the 1x2x1.5 shells, the groove in the partial band therefore runs from z 63.3 to z 73.0, 7 below the rim. On the Simple Walls 1x2x1.5 shell the same groove starts 9.2 below the rim, at z 70.8, the height of the upper catch slots, and ends at z 73.0 as on the other two. Its section matches the other seam grooves: 0.4 deep, half width 0.5 at the floor, a 1:2 rise at the bottom and 45 degrees at the top.
 
 Evidence, on the seam at y 25 of the +x side wall, whose inner face is at x 22:
 
@@ -46,26 +54,27 @@ Evidence, on the seam at y 25 of the +x side wall, whose inner face is at x 22:
 - `python wall_depth.py T1215 +x 18 25 22 62 74` and the same command for O1215 report the recess from z 63.4 to 72.9.
 - `python wall_depth.py S1215 -x -18 25 -22 62 74` shows the same short groove on the -x side wall.
 
-The generator reproduces it for every Simple wall with a partial top band. The 1x2x1.5 shell is the only Simple Walls reference with a partial band, and only its two side walls have seams, so this rule rests on one example and is applied to the front and back walls by extension. The partial band is always 25 mm tall, because heights step in half LU, so the example covers every partial band height the generator can make. The groove is 0.4 mm deep and does not affect fit.
+The generator reproduces it for every Simple wall with a partial top band. The 1x2x1.5 shell is the only Simple Walls reference with a partial band, and only its two side walls have seams, so this rule rests on one example and is applied to the front and back walls by extension. The partial band is always 25 mm tall, because heights step in half LU, so the example covers every partial band height the generator can make.
 
 ## P1. Half-LU cells
 
 MultiBuild publishes no shell whose width or front-to-back size is a half LU. When a size ends in a half LU, the generator lays out whole 50 mm cells from the origin and then one 25 mm cell at the +x end or at the back. This rule is the generator's own:
 
 - The half cell sits at the +x end and at the back (+y). The drawer generator counts its 50 mm height bands from the drawer's bottom, and a drawer's height runs front to back in the shell, so its side-wall jogs line up with the shell's seam slots when the drawer's bottom faces -y. A shell mounted with its print-orientation front (-y) down therefore takes the matching drawer upright, with the half band at the top of both. Across the width the drawer centres its cells, but no drawer feature engages a shell feature across the width.
-- The half cell's pad has the same outline rules as a whole pad, at its own size. It carries the threaded holes that fall on the 25 mm hole grid (at the half cell's centre along its short direction) and the mid-edge notches on its 50 mm sides, but no notches on its 25 mm sides and no central pocket, corner pockets or side clip pockets. A notch is 9.2 mm wide at the face, wider than the 7.7 mm flat part of a 25 mm side, so on that side it would cut into both corner chamfers. Those pockets are laid out for a 50 mm pad. On a 25 mm side the flat part of the pad side spans only 3.85 mm each way from its middle, so side pockets centred 7.5 from the middle would run into the pad's corner chamfers. The central pocket's pointed end reaches 14.9 from the pad centre, past a pad face 9.3 from it. As a result, a shell's half-LU side cannot be clipped to a neighbouring shell at the base.
-- No rail channel, and no catch slots, sit on the half cell's stretch of wall. A 17 mm channel with its bulges, and a pair of catch slots each reaching 16.4 mm from the cell centre, do not fit in 25 mm.
+- The half cell's pad has the same outline rules as a whole pad, at its own size, and keeps the whole pad's features wherever they fit. Each hole, corner and 50 mm side sits at the same distance from the pad's faces as on a whole pad, so these features are placed exactly as there: the threaded holes on the 25 mm grid, a corner clip pocket at each corner, and on each 50 mm side the mid-edge notch and, where the side faces outward, the two side clip pockets.
+- Three features are left out. A 25 mm side has no notch: the notch is 9.2 mm wide at the face, wider than the 7.7 mm flat part of the side, so it would cut into both corner chamfers. A 25 mm side has no side clip pockets: centred 7.5 from the middle of the side, they would run into the corner chamfers. And there is no central pocket: its flat end is 14.9 from the pad centre, beyond a pad face 9.3 from it. A shell's 25 mm pad sides therefore cannot take a side clip.
+- No rail channel, and no catch slots, sit on the half cell's stretch of wall. A half cell is always at the end of a face, where the flat outer face between the seam and the corner chamfer is 25 - 8.737 = 16.3 mm long, shorter than a channel bulge, which is 17 mm wide. A pair of catch slots reaches 16.4 mm each way from a cell centre, beyond the half cell's 12.5.
 - A rail channel on a whole cell runs down through the foot of the pad below it even when that pad is a half pad, as on the right wall of a shell whose width ends in a half LU. Without that cut, a Topped Rail channel would be closed at both ends.
 - Seam features follow every seam, including the seam next to the half cell: the floor bridge gap, the seam grooves and the seam slots.
 - On a Topless Rail wall, the rim groove runs through the half cell, since it has no channel to avoid.
 
-Evidence: the soundness section of `regress.py` renders half-LU configurations, including a Topless one and a Simple one, and checks that each is a single sound body with locked bounding box and volume. For the channel through a half pad's foot, render a 2.5 x 1.5 x 2 Topped shell to `h.stl` and run `python wall_depth.py h.stl -x 105 0 100 3.6 7 0.3` (right wall, over a half pad) beside `python wall_depth.py h.stl +y 0 -30 -25 3.6 7 0.3` (front wall, over a whole pad): both report a depth of 2.2 from z 4.8 upward.
+Evidence: the soundness section of `regress.py` renders half-LU configurations, including Topless and Simple ones, and checks that each is a single sound body with locked bounding box and volume. For the channel through a half pad's foot, from the repository root run `& "C:\Program Files\OpenSCAD\openscad.exe" -o .local-build\out\shell\h.stl -D width_lu=2.5 -D height_lu=1.5 -D depth_lu=2 "shells\multibin-shell\MultiBin Shell - Parametric.scad"`, then from the `analysis` folder compare `python wall_depth.py ..\..\..\.local-build\out\shell\h.stl -x 105 0 100 3.6 7 0.3` (right wall, over a half pad) with `python wall_depth.py ..\..\..\.local-build\out\shell\h.stl +y 0 -30 -25 3.6 7 0.3` (front wall, over a whole pad): both report a depth of 2.2 from z 4.8 upward.
 
 ## P2. A different wall kind on each side
 
-MultiBuild publishes each shell with one wall kind on all four sides. The generator takes a kind for each side, and each feature follows the kind of the face it belongs to: the rail channel and its foot, the catch slots, the seam grooves and the rim groove. Features at the corners and in the base do not depend on the wall kind; the corner slots and corner faces measure the same on all three published kinds. A pad side facing outward carries its side clip pockets on every wall kind.
+MultiBuild publishes each shell with one wall kind on all four sides. The generator takes a kind for each side. Three features follow the kind of the face they belong to: the rail channel and its foot, the rim groove, and the seam groove in a partial top band (Q1). Everything else, including the catch slots, the seam slots, the corners and the base, is the same on all three published kinds. A pad side facing outward carries its side clip pockets on every wall kind.
 
-Evidence: `python compare.py` matches all three kinds with the same corner and base construction, and the soundness section of `regress.py` renders a shell with Topped, Topless and Simple sides together.
+Evidence: `python compare.py` matches all three kinds with the same catch slot, corner and base construction, and the soundness section of `regress.py` renders shells with Topped, Topless and Simple sides together.
 
 ## P3. Sizes beyond the published shells
 
@@ -73,8 +82,8 @@ The generator accepts 1 to 12 LU of width (X, `width_lu`), 0.5 to 12 LU front to
 
 A shell 0.5 LU front to back has no whole cells along Y, so its left and right walls carry no channels or catch slots, and all its pads are half pads.
 
-The shell is built only from 25 mm and 50 mm cells, so a size typed in off the half-LU step is rounded to the nearest half LU, and a size below the slider's minimum is raised to it. Either adjustment prints a `NOTE` line in OpenSCAD's console. Without the rounding, a width of 1.3 LU would leave the base 9.2 mm wider than the walls.
+The shell is built only from 25 mm and 50 mm cells, so a size typed in off the half-LU step is rounded to the nearest half LU, and a size outside the slider's range is held to it. Each adjustment prints a `NOTE` line in OpenSCAD's console naming the reason: off the half-LU grid, below the minimum or above the maximum. Without the rounding, a width of 1.3 LU would leave the base 9.2 mm wider than the walls.
 
-Render time grows with the number of cells and the height. `VERIFICATION.md` records the render time of each reference configuration. Larger sizes take much longer: observed 2026-10-08 with OpenSCAD 2021.01 on Tim's Windows 11 desktop, with several other renders running at once, a 4 x 4 x 4 shell took about 220 s, 6 x 6 x 2 about 410 s, 12 x 1 x 12 about 11 minutes and 8 x 8 x 1 between 14 and 17 minutes. MakerWorld's Parametric Model Maker may stop a render that runs too long; its limit is not known here.
+Render time grows with the number of cells and the height. `VERIFICATION.md` records the render time of each reference configuration. Larger sizes take much longer. Observed 2026-10-08 with the generator at commit 84ffa3f and OpenSCAD 2021.01, on a Windows 11 desktop with 24 logical processors running four to eight renders at once: 12 x 1 x 1 about 170 s, 1 x 12 x 1 about 160 s, 12 x 1 x 12 about 11 minutes, and 8 x 8 x 1 between 17 and 19 minutes. MakerWorld's Parametric Model Maker may stop a render that runs too long; its limit is not known here.
 
-Evidence: the soundness section of `regress.py` includes a 4 LU wide shell, a 4 LU tall shell and a shell 0.5 LU front to back.
+Evidence: the soundness section of `regress.py` includes 4 LU wide, 12 LU wide, 4 LU tall and 7 LU and 7.5 LU front-to-back shells, and a shell 0.5 LU front to back.

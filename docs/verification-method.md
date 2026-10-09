@@ -50,9 +50,9 @@ Each part has `analysis/regress.py` and a locked `analysis/baseline.json`. One r
 - **Drift:** no metric may get worse than the baseline by more than 0.002 mm, or 0.01 % of volume.
 - **Soundness:** a list of configurations without references, checked for mesh soundness and against locked bounding-box and volume values. The volume check catches a feature fused into the wrong neighbour, which leaves the mesh topologically valid.
 
-A missing reference file is reported on every run, never skipped silently. Run the gate after every change. Relock the baseline only after an intended geometry change, and say so in the commit message.
+A missing reference file is reported on every run, never skipped silently. In the shell's gate, a reference that was present when the baseline was locked fails the run if it goes missing. Run the gate after every change. Relock the baseline only after an intended geometry change, and say so in the commit message.
 
-The gate is proven by running it against a known-bad version of the generator kept in `analysis/fixtures/`. That run must fail.
+The gate is proven by running it against a known-bad version of the generator kept in `analysis/fixtures/`. That run must fail, and each section of the gate must report the fixture defect it is meant to catch, so that a section that stopped working is noticed; the shell's `analysis/selftest.py` checks this.
 
 ## Gate 2: adversarial review
 

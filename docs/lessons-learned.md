@@ -35,7 +35,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** for configurations without a reference, lock their bounding box and volume in the regression baseline, and treat any change as a failure until it is shown to be intended.
 
-**Check:** the soundness section of `regress.py` prints the bounding box and volume for each configuration and flags any change.
+**Check:** the soundness section of `regress.py` prints the bounding box and volume for each configuration and flags any change beyond its tolerance: 0.001 mm on the bounding box, and 0.01 mm3 of volume for the shell or 0.5 mm3 for the drawer.
 
 ## A gate that has never failed is unproven
 
@@ -45,7 +45,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** prove each gate by running it, in full, against a known-bad fixture, and confirm it fails for the expected reasons.
 
-**Check:** `analysis/fixtures/` holds the known-bad version; `regress.py --scad <fixture>` must exit with status 1.
+**Check:** `analysis/fixtures/` holds the known-bad version; `regress.py --scad <fixture>` must exit with status 1. For the shell, `selftest.py` also checks that each section of the gate reports the failure the fixture should cause.
 
 ## Evidence scripts can lie
 
@@ -135,4 +135,4 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** a solid that continues a loft overlaps it by exactly the loft's end slab, so the overlapping sections are identical; and a cut that would end exactly on another cut's face stops a small, stated distance short of it.
 
-**Check:** the shell generator's `slab` constant sets both the loft slabs and those overlaps, and the soundness list in `regress.py` includes a 1 x 7 x 1 shell, which exported broken slits before the change.
+**Check:** the shell generator's `slab` constant sets every thin hull slab and every overlap with a loft, and the soundness list in `regress.py` includes 1 x 7 x 1 and 12 x 1 x 1 shells, which exported broken slits before the change.

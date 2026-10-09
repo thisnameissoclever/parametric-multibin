@@ -3,8 +3,10 @@ and measure how far the two meshes are apart.
 
 Usage: python compare.py [keys...] [--report] [--clusters N]
 Default keys: every reference shell present on this machine (see refs.py).
---report writes VERIFICATION.md (only when every reference is present).
+--report writes VERIFICATION.md; it refuses unless every reference in
+refs.EXPECTED is present and no keys are given.
 --clusters N lists the N worst deviation clusters per direction (default 10).
+Exits 1 when any compared reference fails the gate column of the report.
 
 Thresholds (docs/verification-method.md): bounding box <= 0.02 mm per axis,
 volume <= 0.5 %, p99 <= 0.05 mm, maximum <= 0.2 mm.
@@ -20,7 +22,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-from refs import STL_DIR, SIZES, WALLS, available, fname
+from refs import EXPECTED, STL_DIR, SIZES, WALLS, available, fname
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools"))
 import mbpaths  # noqa: E402
@@ -152,8 +154,24 @@ def openscad_version():
     return (r.stdout + r.stderr).strip()
 
 
+def scad_digest():
+    """SHA-256 of the generator with LF line endings, as git stores it, so the
+    digest matches `git show <commit>:<path> | sha256sum` on any machine."""
+    return hashlib.sha256(SCAD.read_bytes().replace(b"\r\n", b"\n")).hexdigest().upper()
+
+
+def gate(r, problems, sound):
+    """PASS only when every limit is met, the mesh is sound and the render
+    printed no message."""
+    mx = max(r["ref->gen"]["mx"], r["gen->ref"]["mx"], r["ref->gen"]["vmax"], r["gen->ref"]["vmax"])
+    p99 = max(r["ref->gen"]["p99"], r["gen->ref"]["p99"])
+    ok = (r["bbox"] <= 0.02 and r["vol"] <= 0.5 and p99 <= 0.05 and mx <= 0.2
+          and sound[r["key"]] and not problems[r["key"]])
+    return "PASS" if ok else "FAIL"
+
+
 def report(rows, timings, problems, sound):
-    digest = hashlib.sha256(SCAD.read_bytes()).hexdigest().upper()
+    digest = scad_digest()
     lines = [
         "# VERIFICATION - shell Gate 1 mechanical match",
         "",
@@ -161,13 +179,18 @@ def report(rows, timings, problems, sound):
         f"{N_SAMPLES} surface samples per direction per model, bounding-box aligned, "
         f"plus a sweep of every vertex in both directions.",
         "",
-        f"File verified: `{SCAD.name}`, SHA-256 {digest}.",
+        f"File verified: `{SCAD.name}`, SHA-256 {digest}, computed with LF line endings as git "
+        f"stores the file (`git show <commit>:\"shells/multibin-shell/{SCAD.name}\" | sha256sum`).",
         "",
         f"Renderer: {openscad_version()}.",
         "",
         "Thresholds (`docs/verification-method.md`): bounding box <= 0.02 mm per axis, volume <= 0.5 %, "
         "p99 <= 0.05 mm, maximum <= 0.2 mm. The sound column means watertight, one body, every edge "
-        "shared by exactly two faces and no duplicated facets.",
+        "shared by exactly two faces and no duplicated facets. The gate column is PASS only when every "
+        "limit is met, the mesh is sound and the render printed no message.",
+        "",
+        "The sampled columns can differ in the fourth decimal between runs, because OpenSCAD does not "
+        "write its triangles in a fixed order; the bounding box, volume and all-vertices columns repeat.",
         "",
         "| model | bbox dmax (mm) | vol delta (%) | p99 (worse dir) | sampled max | all-vertices max | sound | render (s) | gate |",
         "|---|---|---|---|---|---|---|---|---|",
@@ -176,11 +199,10 @@ def report(rows, timings, problems, sound):
         mx = max(r["ref->gen"]["mx"], r["gen->ref"]["mx"])
         vmx = max(r["ref->gen"]["vmax"], r["gen->ref"]["vmax"])
         p99 = max(r["ref->gen"]["p99"], r["gen->ref"]["p99"])
-        ok = r["bbox"] <= 0.02 and r["vol"] <= 0.5 and p99 <= 0.05 and sound[r["key"]]
-        gate = "PASS" if ok and max(mx, vmx) <= 0.2 else ("PASS*" if ok else "FAIL")
         lines.append(f"| {r['key']} | {r['bbox']:.4f} | {r['vol']:.3f} | {p99:.4f} | {mx:.4f} | "
-                     f"{vmx:.4f} | {'yes' if sound[r['key']] else 'NO'} | {timings[r['key']]:.0f} | {gate} |")
-    lines += ["", "PASS* means every limit is met except a localized maximum covered by DEVIATIONS.md.", ""]
+                     f"{vmx:.4f} | {'yes' if sound[r['key']] else 'NO'} | {timings[r['key']]:.0f} | "
+                     f"{gate(r, problems, sound)} |")
+    lines += [""]
     noisy = {k: v for k, v in problems.items() if v}
     if noisy:
         lines += ["Render messages:", ""] + [f"- {k}: {m}" for k, v in noisy.items() for m in v] + [""]
@@ -195,7 +217,14 @@ def main():
     n_clusters = 10
     if "--clusters" in args:
         n_clusters = int(args[args.index("--clusters") + 1])
-    keys = [a for a in args if not a.startswith("--") and not a.isdigit()] or available()
+    named = [a for a in args if not a.startswith("--") and not a.isdigit()]
+    if "--report" in args:
+        missing = [k for k in EXPECTED if k not in available()]
+        if named or missing:
+            print("refusing --report: it needs every reference in refs.EXPECTED and no named keys; "
+                  f"missing: {missing or 'none'}")
+            return 2
+    keys = named or available()
     rows, timings, problems, sound = [], {}, {}, {}
     for k in keys:
         p, secs, problems[k] = generate(k)
@@ -208,9 +237,14 @@ def main():
                 print(f"[{k}] mesh not a clean single shell: {audit(p)}")
             print(f"[{k}] zero-area triangles in the export: {zero_area_triangles(p)}")
         print()
-    if "--report" in args and len(rows) == len(available()):
+    if "--report" in args:
         report(rows, timings, problems, sound)
+    failed = [k for k in keys if k not in sound] + [r["key"] for r in rows if gate(r, problems, sound) != "PASS"]
+    if failed:
+        print(f"FAIL: {', '.join(failed)}")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

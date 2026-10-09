@@ -40,14 +40,18 @@ arc_fn = 32;                     // facets on the small pocket arcs (chord error
 U  = 50;
 // Shells are built from 25 mm and 50 mm cells, so each size is rounded to the
 // nearest half LU (a size typed in off the 0.5 step would otherwise misplace
-// the base) and held to the slider's minimum.
-function half_lu(v, lo) = max(lo, round(2 * v) / 2);
+// the base) and held to the slider's range.
+max_lu = 12;
+function half_lu(v, lo) = min(max_lu, max(lo, round(2 * v) / 2));
 NX = half_lu(width_lu, 1);
 NY = half_lu(height_lu, 0.5);
 NZ = half_lu(depth_lu, 1);
-for (v = [["width_lu", width_lu, NX], ["height_lu", height_lu, NY], ["depth_lu", depth_lu, NZ]])
+for (v = [["width_lu", width_lu, NX, 1], ["height_lu", height_lu, NY, 0.5], ["depth_lu", depth_lu, NZ, 1]])
     if (v[1] != v[2])
-        echo(str("NOTE: ", v[0], " = ", v[1], " is not on the half-LU grid; using ", v[2], "."));
+        echo(str("NOTE: ", v[0], " = ", v[1],
+                 v[1] < v[3] ? " is below the minimum" : v[1] > max_lu ? " is above the maximum"
+                             : " is not on the half-LU grid",
+                 "; using ", v[2], "."));
 
 X0 = -U/2;  X1 = U*NX - U/2;     // outer faces
 Y0 = -U/2;  Y1 = U*NY - U/2;
@@ -425,7 +429,7 @@ module inner_recesses() {
 // octagonal section in the (t, z) plane at depth n: half width a, half height b,
 // corner chamfer c
 module oct_slab(a, b, c, n)
-    translate([0, n, 0]) rotate([-90, 0, 0]) linear_extrude(height = 0.001)
+    translate([0, n, 0]) rotate([-90, 0, 0]) linear_extrude(height = slab)
         polygon([[-a + c, -b], [a - c, -b], [a, -b + c], [a, b - c],
                  [a - c, b], [-a + c, b], [-a, b - c], [-a, -b + c]]);
 
@@ -487,7 +491,7 @@ function pocket_section(a, b, c) =
 
 // a thin slice of a pocket section at depth y along the pocket axis
 module pocket_slab(a, b, c, y)
-    translate([0, y, 2]) rotate([90, 0, 0]) linear_extrude(height = 0.001) polygon(pocket_section(a, b, c));
+    translate([0, y, 2]) rotate([90, 0, 0]) linear_extrude(height = slab) polygon(pocket_section(a, b, c));
 
 // clip pocket entering a pad side, built for the +y side of a pad centred at the
 // origin, at t along the side: a 6 wide entry, then an obround head
@@ -496,7 +500,7 @@ module side_pocket(t) {
     translate([t, 0, 0]) {
         translate([0, 0, 1]) linear_extrude(height = 2) side_pocket_outline(h + 0.5);
         hull() {                                        // 0.2 chamfer at the opening
-            translate([-3, h - 0.2, 1]) cube([6, 0.001, 2]);
+            translate([-3, h - 0.2, 1]) cube([6, slab, 2]);
             translate([-3.2, h, 1]) cube([6.4, 0.5, 2]);
         }
         // ceiling slits, 0.1 wide and 0.2 tall, following the pocket outline
@@ -623,14 +627,19 @@ module pads()
                 if (c[1] == U && r[1] == U)
                     pad_variant([j == ny_cells - 1, i == 0, j == 0, i == nx_cells - 1]);
                 else
-                    half_pad(c[1], r[1]);
+                    half_pad(c[1], r[1], [j == ny_cells - 1, i == 0, j == 0, i == nx_cells - 1]);
         }
         channels_low();
     }
 
-// a pad on a half-LU cell: the holes on the 25 mm grid, and the edge notches on
-// its 50 mm sides (a notch is wider than the flat part of a 25 mm side)
-module half_pad(wx, wy)
+// A pad on a half-LU cell, wx by wy, with outward listing which sides face the
+// outside of the shell (order +y, -x, -y, +x, as for pad_variant). It has the
+// threaded holes on the 25 mm grid; a corner clip pocket at each corner, placed
+// as at a whole pad's corners; and, on each 50 mm side, the edge notch and,
+// facing outward, the side clip pockets. A whole pad's central pocket does not
+// fit, nor do a notch or side pockets on a 25 mm side, whose flat part is
+// narrower than the notch.
+module half_pad(wx, wy, outward)
     difference() {
         intersection() {
             cell_pad(0, 0, wx, wy);
@@ -638,8 +647,21 @@ module half_pad(wx, wy)
         }
         for (dx = wx == U ? [-12.5, 12.5] : [0], dy = wy == U ? [-12.5, 12.5] : [0])
             translate([dx, dy, 0]) threaded_hole();
-        for (k = [0:3]) if ((k % 2 == 0 ? wx : wy) == U) rotate([0, 0, 90 * k])
-            edge_notch((k % 2 == 0 ? wy : wx) / 2 - pad_in);
+        for (k = [0:3]) {
+            side_l = k % 2 == 0 ? wx : wy;                  // length of side k
+            shift = ((k % 2 == 0 ? wy : wx) - U) / 2;       // its face, from a whole pad's
+            if (side_l == U) rotate([0, 0, 90 * k]) translate([0, shift, 0]) {
+                edge_notch();
+                if (outward[k]) {
+                    side_pocket(7.5);
+                    side_pocket(-7.5);
+                }
+            }
+        }
+        // rotating by 90k takes the +x+y corner to the corner with these signs
+        for (k = [0:3]) let (sg = [[1, 1], [-1, 1], [-1, -1], [1, -1]][k])
+            translate([sg[0] * (wx - U) / 2, sg[1] * (wy - U) / 2, 0]) rotate([0, 0, 90 * k])
+                corner_pocket();
     }
 
 // ------------------------------------------------------------------ holes

@@ -46,8 +46,8 @@ Each whole cell's pad, centred on the cell, has these features.
 - Four blind threaded holes at (+/-12.5, +/-12.5), up to z 5.2, with a 45 degree entry cone of radius 3.8 at z 0. The thread is right-handed with pitch 3.125. Along the helix coordinate u = z - 3.125 a / 360 (mod 3.125), where a is the angle about the hole axis from +x, the radius rises from 3.0 to 3.5 over u 1.0735 to 2.0110, stays at 3.5 to 2.6360, falls back to 3.0 by 3.5735, and is 3.0 elsewhere.
 - A central pocket:
   - a flared octagon, half width 6.0 at z 0.4 growing at 45 degrees to 8.5 at z 2.9, with corner legs 3.515 and 4.979, and a ceiling at z 3.2;
-  - a pointed prism toward -y with vertices (+/-3.521, -14.5), (+/-8.5, -9.521), (+/-8.5, -2.479) and (0, 6.021), whose far edge steps out at 45 degrees to y -14.9 between z 1.8 and 2.2;
-  - nine ceiling slits 0.1 wide, every 1 mm from y -14.2, up to z 3.4;
+  - a seven-sided prism, pointed at (0, 6.021) and cut off flat at y -14.5, with vertices (+/-3.521, -14.5), (+/-8.5, -9.521), (+/-8.5, -2.479) and (0, 6.021); its flat end steps out at 45 degrees to y -14.9 between z 1.8 and 2.2;
+  - nine ceiling slits 0.1 wide across the prism, every 1 mm from y -14.2, up to z 3.4;
   - a plate up to z 3.4 over |y| <= 5.1, keeping only the octagon's two top chamfers;
   - a square of half width 5.1 up to z 3.6;
   - an octagon of half width 5.1 and leg 2.988 up to z 5.2.
@@ -72,7 +72,7 @@ Simple walls have no channel; their outer face is plain.
 Every recess has the same section: 0.4 deep and 2.2 tall, rising at 1:2 (0.8 tall) from its bottom edge and closing at 45 degrees at its top. Its ends are 45 degrees in plan, which at the cavity corners is the inner corner chamfer plane.
 
 - Catch slots, on every wall kind, for each whole cell: from t 10.435 to 16.435 on both sides of the cell centre, at z 13.3, and 9.2 below the top of each 50 mm band (bands end at z 5 + 50k). When Z is not a whole number of LU, a row also sits 9.2 below the rim.
-- Seam grooves at each seam between cells: half width 0.5 at the groove floor with 45 degree sides, one per 50 mm band, from 13.3 above the band's base to 7 below the band's top or the rim, whichever is lower. On a Simple wall the groove in a partial top band starts 9.2 below the rim instead (see `DEVIATIONS.md`).
+- Seam grooves at each seam between cells: half width 0.5 at the groove floor with 45 degree sides, one per 50 mm band: in band b, counting from 0, from z 13.3 + 50b to 7 below the band's top or the rim, whichever is lower. On a Simple wall the groove in a partial top band starts 9.2 below the rim instead (see `DEVIATIONS.md`).
 - Rim groove, 4.2 below the rim: along the whole flat inner face on Topped Rail and Simple walls, ending at the inner corner chamfers. A Topless Rail wall leaves it out within t 10.435 of each whole cell's centre, behind the rail channel, so the groove continues across the seams between cells.
 
 ## Clip slots through the walls
@@ -86,9 +86,10 @@ MultiBuild publishes each shell with one wall kind on all four sides. Every feat
 
 ## Analysis tools
 
-Run these with `.venv\Scripts\python.exe` from the `analysis` folder. `docs/verification-method.md` at the repository root defines the gates they serve.
+Run these from the `analysis` folder with the repository's Python environment, `..\..\..\.venv\Scripts\python.exe`. `docs/verification-method.md` at the repository root defines the gates they serve.
 
-- `compare.py` renders each reference configuration and reports the Gate 1 metrics; `--report` rewrites `VERIFICATION.md`.
-- `regress.py` is the regression gate, with its locked `baseline.json` and the known-bad fixture in `fixtures`.
+- `compare.py` renders each reference configuration and reports the Gate 1 metrics, exiting 1 when any fails; `--report` rewrites `VERIFICATION.md` and refuses unless every expected reference is present.
+- `regress.py` is the regression gate, with its locked `baseline.json`. `selftest.py` runs it against the known-bad fixture in `fixtures` and checks that every section of the gate reports the failure it must.
+- `export_check.py` counts the export artifacts described in `DEVIATIONS.md` M2.
 - `worst_points.py` lists the worst vertex deviations with their locations; `wall_depth.py` measures recess depth along a vertical line on a wall.
 - `fingerprint.py` (plane inventory), `section.py` (sections with circle fits), `window.py` (windowed sections), `facemap.py` (ray-cast depth images) and `thread_fit.py` (thread profile fit) were used to take the measurements above.

@@ -36,6 +36,8 @@ def write_png(path, img):
 
 
 def main():
+    if len(sys.argv) < 4 or len(sys.argv) == 7 or len(sys.argv) > 8:
+        sys.exit(__doc__ + "\nGive both ends of the gray scale (lo and hi), or neither.")
     key, face, side = sys.argv[1], sys.argv[2], sys.argv[3]
     step = float(sys.argv[4]) if len(sys.argv) > 4 else 0.1
     out = sys.argv[5] if len(sys.argv) > 5 else f"{key}_{face}_{side}.png"

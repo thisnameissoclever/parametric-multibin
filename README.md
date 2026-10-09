@@ -2,7 +2,7 @@
 
 OpenSCAD generators for MultiBoard's MultiBin storage parts (MultiBoard now trades as MultiBuild). Each generator is a single self-contained `.scad` file: paste the whole file into MakerWorld's Parametric Model Maker, or open it in OpenSCAD 2021.01 or later and use the Customizer, then choose the size and options you want.
 
-For every size MultiBuild publishes, a generator reproduces their part to within a few hundredths of a millimetre. For sizes and options they don't publish, it applies the same construction rules.
+For each size checked against MultiBuild's own files, a generator reproduces their part to within a few hundredths of a millimetre. For other sizes and options, it applies the same construction rules.
 
 ## Contents
 

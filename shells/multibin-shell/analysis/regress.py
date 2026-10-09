@@ -16,8 +16,11 @@ Requires the packages in requirements.txt at the repository root.
 Usage:
   python regress.py                    check against analysis/baseline.json
   python regress.py --update-baseline  relock the baseline to current output
-  python regress.py --quick            skip the soundness section
-  python regress.py --scad PATH        check a different SCAD (self-test the gate)
+  python regress.py --quick            skip the soundness section (not with --update-baseline)
+  python regress.py --scad PATH        check a different SCAD (selftest.py uses this)
+
+A reference that was present when the baseline was locked must still be
+present; a missing one is a failure, never a skip.
 """
 
 import json
@@ -27,17 +30,15 @@ from pathlib import Path
 
 import compare
 from compare import OPENSCAD, audit, clean, generate, metrics, out_for, render_problems
-from refs import STL_DIR, fname
+from refs import EXPECTED, STL_DIR, fname
 
 BASELINE = Path(__file__).parent / "baseline.json"
 HARD = dict(bbox=0.02, vol=0.5, p99=0.05, mx=0.2)
 DRIFT = dict(bbox=0.002, vol=0.01, p99=0.002, mx=0.002)
-
-# Every reference shell this gate expects; missing files are reported, never
-# skipped silently.
-EXPECTED = ["T111", "T212", "T313", "T3135", "T323", "T1215",
-            "O111", "O212", "O323", "O1215",
-            "S111", "S212", "S323", "S1215"]
+# a configuration without a reference fails when its bounding box or volume
+# moves by more than this; repeat renders agree to 0.001 mm3
+SOUND_BBOX = 0.001
+SOUND_VOL = 0.01
 
 W = '"{}"'
 SOUNDNESS = [
@@ -51,6 +52,10 @@ SOUNDNESS = [
     ("wide_4x1x1",         dict(width_lu=4, height_lu=1, depth_lu=1)),
     # pads far from the origin: some positions once exported broken pocket slits
     ("long_1x7x1",         dict(width_lu=1, height_lu=7, depth_lu=1)),
+    ("wide_12x1x1",        dict(width_lu=12, height_lu=1, depth_lu=1)),
+    ("long_mixed_2.5x7.5x1.5", dict(width_lu=2.5, height_lu=7.5, depth_lu=1.5,
+                                front_wall=W.format("topped"), back_wall=W.format("topped"),
+                                left_wall=W.format("topless"), right_wall=W.format("simple"))),
     ("mixed_walls_2x2x1",  dict(width_lu=2, height_lu=2, depth_lu=1,
                                 front_wall=W.format("topped"), back_wall=W.format("topless"),
                                 left_wall=W.format("simple"), right_wall=W.format("topped"))),
@@ -99,9 +104,13 @@ def main():
             print("refusing to lock a baseline from an alternate SCAD")
             return 2
         print(f"*** checking ALTERNATE SCAD: {scad.name} ***")
+    if update and quick:
+        print("refusing to lock a baseline without the soundness section")
+        return 2
     if not update and not BASELINE.exists():
         print("no baseline; run with --update-baseline first")
         return 2
+    base_raw = {} if update else json.loads(BASELINE.read_text(encoding="utf-8"))
     current, failures, sound_now = {}, [], {}
 
     missing = [k for k in EXPECTED if not (STL_DIR / fname(k)).is_file()]
@@ -112,6 +121,11 @@ def main():
         for k in missing:
             print(f"  {k}: {fname(k)}")
         print("!" * 78)
+    if not present:
+        failures.append("no reference files found: nothing was compared")
+    for k in missing:
+        if k not in base_raw.get("missing_at_lock", []) and not update:
+            failures.append(f"{k}: reference file missing, but it was present when the baseline was locked")
 
     print("=" * 78)
     print(f"REFERENCE MATCH ({len(present)} of {len(EXPECTED)} references)")
@@ -133,7 +147,6 @@ def main():
         if not clean(a):
             failures.append(f"{key}: mesh not a clean single shell: {a}")
 
-    base_raw = {} if update else json.loads(BASELINE.read_text(encoding="utf-8"))
     base = base_raw.get("models", {})
     for k in base_raw.get("missing_at_lock", []):
         if k in current:
@@ -176,14 +189,15 @@ def main():
                 was = golden[name]
                 de = max(abs(x - y) for x, y in zip(a["extents"], was["extents"]))
                 dv = abs(a["volume"] - was["volume"])
-                if de > 0.001 or dv > 0.5:
+                if de > SOUND_BBOX or dv > SOUND_VOL:
                     note = f"  GEOMETRY CHANGED (bbox {de:.4f}, vol {dv:.3f})"
                     failures.append(f"soundness/{name}: geometry moved vs baseline (bbox {de:.4f} mm, volume {dv:.3f} mm3)")
             elif not update:
                 note = "  (not in baseline)"
+                failures.append(f"soundness/{name}: absent from baseline; relock to cover it")
             print(f"  {name:24} {'ok' if clean(a) else 'BROKEN'} bbox={a['extents']} vol={a['volume']}{note}")
             if not clean(a):
-                failures.append(f"soundness/{name}: {a}")
+                failures.append(f"soundness/{name}: mesh not a clean single shell: {a}")
 
     if update:
         # a baseline locked over a failure would hide it from every later run
