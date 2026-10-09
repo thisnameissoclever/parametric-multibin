@@ -36,7 +36,7 @@ from pathlib import Path
 
 import compare
 from compare import EXPORT_FORMAT, LIMITS, OPENSCAD, audit, clean, generate, metrics, out_for, render_problems, summary
-from export_check import coincident_3mf
+from export_check import MERGE_TOLS, coincident_3mf, merge_faults
 from refs import EXPECTED, STL_DIR, fname
 
 BASELINE = Path(__file__).parent / "baseline.json"
@@ -85,8 +85,12 @@ REJECTED = [
 ]
 
 # configurations also exported as 3MF, which keeps separate vertices apart by
-# index: none may write two separate vertices at identical coordinates
-THREEMF_CHECK = ["thin_1.5x0.5x1", "half_both_2.5x1.5x1.5"]
+# index: none may write two separate vertices at identical coordinates, and
+# merging the vertices within each of export_check.MERGE_TOLS must leave every
+# edge shared by exactly two triangles. The two half-LU sizes cover the half
+# pads; 4 x 1 x 1 has seam slots far enough from the origin for rounding to
+# split faces placed from the inner and outer wall faces
+THREEMF_CHECK = ["thin_1.5x0.5x1", "half_both_2.5x1.5x1.5", "wide_4x1x1"]
 
 # console texts a configuration must print, and may print without failing
 EXPECTED_MESSAGES = {
@@ -98,14 +102,15 @@ EXPECTED_MESSAGES = {
 # ------------------------------------------------------------------ decisions
 
 def hard_failures(key, m):
-    """A reference metric over its Gate 1 limit."""
-    return [f"{key}: HARD {field}={m[field]:.4f} > {limit}" for field, limit in HARD.items() if m[field] > limit]
+    """A reference metric over its Gate 1 limit, or not a number."""
+    return [f"{key}: HARD {field}={m[field]:.4f} > {limit}" for field, limit in HARD.items()
+            if not m[field] <= limit]
 
 
 def drift_failures(key, now, was):
     """A reference metric worse than its locked value by more than the drift tolerance."""
     return [f"{key}: DRIFT {field} {was[field]:.4f} -> {now[field]:.4f}"
-            for field, tol in DRIFT.items() if now[field] - was[field] > tol]
+            for field, tol in DRIFT.items() if not now[field] - was[field] <= tol]
 
 
 def message_failures(label, problems, expected, seen):
@@ -130,9 +135,11 @@ def sound_failures(name, a, was):
 
 
 def relock_changes(current, sound_now, old):
-    """What a relock would accept: reference drift and configuration shape
-    changes against the baseline being replaced."""
-    out = []
+    """What a relock would accept: reference drift, configuration shape changes,
+    and references or configurations dropped, against the baseline being replaced."""
+    out = [f"{k}: locked reference no longer measured" for k in old.get("models", {}) if k not in current]
+    out += [f"soundness/{n}: locked configuration no longer checked" for n in old.get("soundness", {})
+            if n not in sound_now]
     for key, m in current.items():
         if key in old.get("models", {}):
             out += drift_failures(key, m, old["models"][key])
@@ -196,6 +203,9 @@ class Steps:
 
     def coincident_3mf(self, path):
         return coincident_3mf(path)
+
+    def merge_faults(self, path):
+        return {tol: merge_faults(path, tol) for tol in MERGE_TOLS}
 
     def load_baseline(self):
         return json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else None
@@ -269,11 +279,16 @@ def run(steps, scad, update=False, accept=False, quick=False, alternate=False, l
                 tmf, err, problems, seen = steps.render(name, params, scad, expected, fmt="3mf")
                 failures += message_failures(f"soundness/{name} 3MF", problems, expected, seen)
                 groups = steps.coincident_3mf(tmf) if tmf else None
+                merged = steps.merge_faults(tmf) if tmf else {}
                 if groups is None:
                     failures.append(f"soundness/{name}: 3MF render failed")
                 elif groups:
                     failures.append(f"soundness/{name}: 3MF has {groups} group(s) of separate vertices at identical coordinates")
-                log(f"  {name:24} 3MF     coincident vertex groups: {groups}")
+                for tol, edges in merged.items():
+                    if edges:
+                        failures.append(f"soundness/{name}: 3MF merged within {tol:g} mm leaves {edges} edge(s) "
+                                        f"not shared by exactly two triangles")
+                log(f"  {name:24} 3MF     coincident vertex groups: {groups}; edges broken by a merge: {merged}")
 
     if not quick:
         for name, params, error in REJECTED:

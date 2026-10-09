@@ -1,10 +1,11 @@
 """Prove the regression gate works, in three steps:
 
-1. gate_test.py checks every decision of the gate at its limits, in seconds.
+1. gate_test.py checks the gate's decisions at their limits and drives its
+   whole run with stand-in renders, in about a second.
 2. mutation_test.py breaks the gate one way at a time and checks that
    gate_test.py notices each break, in about a minute.
-3. A full run of regress.py against the known-bad fixture must fail, and each
-   section of the gate must report a failure the fixture is known to cause.
+3. A full run of regress.py against the known-bad fixture must fail, and must
+   report each failure listed below that the fixture is known to cause.
 
 The fixture, fixtures/frozen_a6ff94e.scad, is the generator as of commit
 a6ff94e. Against the current baseline it has, among other faults:
@@ -20,6 +21,12 @@ a6ff94e. Against the current baseline it has, among other faults:
   soundness, mesh    broken pocket slits on 1 x 7 x 1
   3MF export         its threaded holes' entry cones cross the thread at shared
                      angles, leaving separate vertices at identical coordinates
+  3MF merge          its seam slots' inner chamfers start in the inner grooves'
+                     floor plane, so merging the 4 x 1 x 1 export's vertices
+                     within 0.00001 mm leaves edges with four triangles
+  expected notes     it prints no note for wall choices on a 0.5 LU side
+  rejected sizes     it builds sizes the sliders cannot produce instead of
+                     stopping with an error
 
 A gate section that stopped working would drop its line from the output, so
 the self-test checks each line, not only the exit status.
@@ -45,6 +52,9 @@ EXPECTED_FAILURES = [
     ("soundness shape", "soundness/half_w_1.5x1x1: geometry changed vs baseline"),
     ("soundness mesh", "soundness/long_1x7x1: mesh not a clean single shell"),
     ("3MF export", "soundness/half_both_2.5x1.5x1.5: 3MF has"),
+    ("3MF merge", "soundness/wide_4x1x1: 3MF merged within 1e-05 mm"),
+    ("expected notes", "soundness/thin_1.5x0.5x1: expected render message missing"),
+    ("rejected sizes", "rejected/offstep_width_1.3: expected the render to stop"),
 ]
 
 

@@ -20,6 +20,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 - [Measure geometry at full export precision](#measure-geometry-at-full-export-precision)
 - [Prove a lock is repeatable before relying on it](#prove-a-lock-is-repeatable-before-relying-on-it)
 - [Make meeting faces coincide exactly or not at all](#make-meeting-faces-coincide-exactly-or-not-at-all)
+- [Read the whole diff of a scripted edit](#read-the-whole-diff-of-a-scripted-edit)
 
 ## Random sampling hides edge-shaped deviations
 
@@ -149,11 +150,11 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** keep each gate decision in a small function and test it at its limit, just under and just over; and for configurations without a reference, lock an exact digest of the geometry rather than a few measures of it.
 
-**Check:** the shell's `analysis/gate_test.py` runs in about a second and fails if any limit moves or any decision changes; `selftest.py` runs it before the end-to-end run against the fixture.
+**Check:** the shell's `analysis/gate_test.py` runs in about a second and tests each decision at its limit and the gate's whole run with stand-in renders; `analysis/mutation_test.py` breaks the gate one way at a time to show those tests notice, and `selftest.py` runs both before the end-to-end run against the fixture.
 
 ## Measure geometry at full export precision
 
-**What happened:** a new check for triangles crossing each other failed on long shells, with crossings 0.0028 mm deep. The geometry was sound: OpenSCAD 2021.01's default ASCII STL keeps six significant digits, so beyond 100 mm from the origin its coordinates are rounded to 0.001 mm, and that rounding pushed vertices through neighbouring faces.
+**What happened:** a new check for triangles crossing each other failed on long shells from the generator of the time, with crossings 0.0028 mm deep. The geometry was sound: OpenSCAD 2021.01's default ASCII STL keeps six significant digits, so beyond 100 mm from the origin its coordinates are rounded to 0.001 mm, and that rounding pushed vertices through neighbouring faces.
 
 **Cause:** the harness measured the export format's rounding as if it were the generator's geometry.
 
@@ -173,10 +174,20 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 ## Make meeting faces coincide exactly or not at all
 
-**What happened:** a reviewer found that the shell's 3MF export, which stores each vertex once, wrote separate vertices at identical coordinates: about eleven pairs at every threaded hole, and one at an outer corner of half-LU shells. A program that merges vertices by position would fold the mesh there. The STL export hid the problem, because its rounding merged the points.
+**What happened:** reviewers found two faults in the shell's 3MF export, which stores each vertex once. It wrote separate vertices at identical coordinates: about eleven pairs at every threaded hole, and one at an outer corner of half-LU shells. And where the top seam slots cross the inner rim groove it wrote zero-width fins, pairs of vertices a rounding step apart, which merging vertices within 0.00001 mm folds into edges shared by four triangles. A program that merges vertices by position on import would fold the mesh at either. The STL export hid both, because its rounding merged the points.
 
-**Cause:** faces that should meet were built a hair apart. The holes' entry cones, threads and core cylinders were faceted at the same 32 angles, so their edges crossed at nearly the same points; and a half pad's corner face, built around the pad's own centre and then moved, missed the floor's corner face by rounding.
+**Cause:** faces that should meet were built a hair apart. The holes' entry cones, threads and core cylinders were faceted at the same 32 angles, so their edges crossed at nearly the same points; and a half pad's corner face, built around the pad's own centre and then moved, missed the floor's corner face by rounding. The seam slot's inner chamfer started in the plane of the grooves' floor, 2.6 mm into the 3 mm wall, but the slot is placed from the outer face and the groove from the inner face, so the two planes differed by rounding.
 
-**Rule:** where two faces should meet, build them from the same numbers so they coincide exactly, as when the cone ends on the core's own polygon and a half pad is built in place; where they should not, keep them clearly apart.
+**Rule:** where two faces should meet, build them from the same numbers in the same frame so they coincide exactly, as when the cone ends on the core's own polygon and a half pad is built in place. Where they should not meet, or are placed from different frames, keep them apart by well over the 0.0001 mm a merge on import may span, as the seam slot's chamfer now starts 0.002 mm past the groove floor.
 
-**Check:** `regress.py` exports two half-LU sizes as 3MF and fails on any separate vertices at identical coordinates, and `export_check.py` counts them in any 3MF file.
+**Check:** `regress.py` exports three sizes as 3MF and fails on any separate vertices at identical coordinates, and on any edge left shared by other than two triangles once vertices within 0.00001 or 0.0001 mm are merged; `export_check.py` reports both for any 3MF file.
+
+## Read the whole diff of a scripted edit
+
+**What happened:** a trial that turned the shell's threaded-hole entry cone by a quarter of a facet used a search-and-replace that also turned the core cylinder below it. The trial was undone for the cone only. The core stayed turned for two review rounds, so the cone and core no longer shared their ring of points, as the comment beside them said they did, and every hole had 8 small flat ledges where the two met.
+
+**Cause:** the replacement pattern matched two lines, and the trial was undone by editing the one line in mind instead of restoring the file.
+
+**Rule:** after a scripted edit, read the whole diff before running anything on it, and undo a trial by restoring the file from version control.
+
+**Check:** `git diff` before each gate run lists every changed line; after a trial is undone, `git diff` shows nothing left of it.

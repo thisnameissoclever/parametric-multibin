@@ -64,8 +64,9 @@ def out_for(scad=None):
 # has no WARNING prefix), is a render message.
 NORMAL_RENDER_LINE = re.compile(
     r"^(Geometries in cache|Geometry cache size in bytes|CGAL Polyhedrons in cache|CGAL cache size in bytes"
-    r"|Total rendering time|Top level object is a 3D object|Simple|Vertices|Halfedges|Edges|Halffacets"
-    r"|Facets|Volumes):")
+    r"|Total rendering time|Top level object is a 3D object|Vertices|Halfedges|Edges|Halffacets|Facets):"
+    # one solid: OpenSCAD reports it as simple, with two volumes (outside and inside)
+    r"|^Simple:\s+yes$|^Volumes:\s+2$")
 
 
 def render_problems(stderr, expected=()):
@@ -179,8 +180,9 @@ def summary(row):
     """The four gated numbers: bbox, vol, p99 in the worse direction, and the
     largest distance from samples or vertices in either direction."""
     a, b = row["ref->gen"], row["gen->ref"]
-    return dict(bbox=row["bbox"], vol=row["vol"], p99=max(a["p99"], b["p99"]),
-                mx=max(a["mx"], b["mx"], a["vmax"], b["vmax"]))
+    # numpy's max carries a NaN through, so a failed measurement fails the limits
+    return dict(bbox=float(row["bbox"]), vol=float(row["vol"]), p99=float(np.max([a["p99"], b["p99"]])),
+                mx=float(np.max([a["mx"], b["mx"], a["vmax"], b["vmax"]])))
 
 
 def metrics(key, gen_path, n_clusters=10):
@@ -223,7 +225,7 @@ def gate(r, problems, sound):
     """PASS only when every limit is met, the mesh is sound and the render
     printed nothing beyond OpenSCAD's normal statistics."""
     s = summary(r)
-    ok = all(s[k] <= LIMITS[k] for k in LIMITS) and sound[r["key"]] and not problems[r["key"]]
+    ok = all(s[k] <= LIMITS[k] for k in LIMITS) and sound[r["key"]] and not problems[r["key"]]   # NaN fails
     return "PASS" if ok else "FAIL"
 
 

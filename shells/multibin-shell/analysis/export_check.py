@@ -3,9 +3,11 @@ together than 0.0001 mm, and triangles that cross each other.
 
 Usage: python export_check.py STL|3MF [...]
 
-For a 3MF file, which stores each vertex once with an index, it also counts
-groups of separate vertices written at identical coordinates; a program that
-merges vertices by position, as many do on import, would fold the mesh there.
+For a 3MF file, which stores each vertex once with an index, it counts
+groups of separate vertices written at identical coordinates, and the edges
+left shared by other than two triangles once vertices closer together than
+0.00001 mm, and then 0.0001 mm, are merged. A program that merges vertices by
+position, as many do on import, would fold the mesh at either kind of fault.
 
 Vertices are merged only where their coordinates are exactly equal, as written
 in the file. Two triangles cross when an edge of one passes through the inside
@@ -24,7 +26,13 @@ from collections import Counter
 
 import numpy as np
 import trimesh
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
+
+# merge distances for the 3MF check: 10 and 100 times the 0.000001 mm step of
+# the coordinates OpenSCAD writes into a 3MF file
+MERGE_TOLS = (1e-5, 1e-4)
 
 
 def load_exact(path):
@@ -54,11 +62,21 @@ def segment_crosses(p0, p1, a, b, c, tol=1e-10):
 
 
 def depth(ta, tb):
-    """How far triangle ta reaches through the plane of tb, on its shallower side."""
+    """How far triangle ta reaches through the plane of tb, on its shallower
+    side; None when tb has no area and so no plane."""
     n = np.cross(tb[1] - tb[0], tb[2] - tb[0])
-    n /= np.linalg.norm(n)
-    s = (ta - tb[0]) @ n
+    length = np.linalg.norm(n)
+    if length < 1e-15:
+        return None
+    s = (ta - tb[0]) @ (n / length)
     return min(max(s.max(), 0.0), max(-s.min(), 0.0))
+
+
+def pair_depth(ta, tb):
+    """Overlap of a crossing pair: the smaller of the two reaches, measured
+    against whichever triangles have a plane."""
+    d = [x for x in (depth(ta, tb), depth(tb, ta)) if x is not None]
+    return min(d) if d else 0.0
 
 
 def crossings(v, f):
@@ -76,7 +94,7 @@ def crossings(v, f):
     for A, B in ((I, J), (J, I)):
         for k in range(3):
             hit |= segment_crosses(tri[A][:, k], tri[A][:, (k + 1) % 3], tri[B][:, 0], tri[B][:, 1], tri[B][:, 2])
-    deepest = max((min(depth(tri[i], tri[j]), depth(tri[j], tri[i])) for i, j in zip(I[hit], J[hit])), default=0.0)
+    deepest = max((pair_depth(tri[i], tri[j]) for i, j in zip(I[hit], J[hit])), default=0.0)
     return int(hit.sum()), float(deepest)
 
 
@@ -85,18 +103,44 @@ def zero_area_count(v, f):
     return int((np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1) < 2e-12).sum())
 
 
-def coincident_3mf(path):
-    """Groups of separate vertices with identical coordinates in a 3MF file."""
+def read_3mf(path):
+    """The vertex coordinates of a 3MF file's mesh, as written, and its triangles."""
     z = zipfile.ZipFile(path)
     model = z.read(next(n for n in z.namelist() if n.endswith(".model"))).decode()
     coords = re.findall(r'<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"', model)
+    tri = re.findall(r'<triangle v1="(\d+)" v2="(\d+)" v3="(\d+)"', model)
+    return coords, np.array(tri, dtype=np.int64).reshape(-1, 3)
+
+
+def coincident_3mf(path):
+    """Groups of separate vertices with identical coordinates in a 3MF file."""
+    coords, _ = read_3mf(path)
     # compared as numbers, so "0.000000" and "-0.000000" are the same position
     return sum(1 for n in Counter(tuple(float(c) + 0.0 for c in v) for v in coords).values() if n > 1)
 
 
+def merge_faults(path, tol):
+    """Edges of a 3MF file's mesh shared by other than two triangles once all
+    vertices closer together than tol are merged, chains included, as a program
+    that merges vertices by position on import would. A triangle the merge
+    collapses is dropped."""
+    coords, tri = read_3mf(path)
+    v = np.array(coords, dtype=np.float64).reshape(-1, 3)
+    pairs = np.array(sorted(cKDTree(v).query_pairs(tol)), dtype=np.int64).reshape(-1, 2)
+    links = coo_matrix((np.ones(len(pairs)), (pairs[:, 0], pairs[:, 1])), shape=(len(v), len(v)))
+    _, label = connected_components(links, directed=False)
+    t = label[tri]
+    t = t[(t[:, 0] != t[:, 1]) & (t[:, 1] != t[:, 2]) & (t[:, 2] != t[:, 0])]
+    edges = np.sort(np.concatenate([t[:, [0, 1]], t[:, [1, 2]], t[:, [2, 0]]]), axis=1)
+    _, count = np.unique(edges, axis=0, return_counts=True)
+    return int((count != 2).sum())
+
+
 def check(path):
     if str(path).lower().endswith(".3mf"):
-        print(f"{path}: {coincident_3mf(path)} groups of separate vertices at identical coordinates")
+        merged = "; ".join(f"merged within {tol:g} mm, {merge_faults(path, tol)} edges not shared by two triangles"
+                           for tol in MERGE_TOLS)
+        print(f"{path}: {coincident_3mf(path)} groups of separate vertices at identical coordinates; {merged}")
         return
     v, f = load_exact(path)
     close = len(cKDTree(v).query_pairs(1e-4))

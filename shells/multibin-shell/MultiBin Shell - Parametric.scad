@@ -106,6 +106,8 @@ catch_z0 = 13.3;                 // lower catch slots (first band only)
 catch_up = 9.2;                  // upper catch slots: this far below each 50 mm band top
 groove_up = 4.2;                 // rim groove: this far below the rim
 seam_g   = 0.5;                  // seam groove half width at its floor
+seam_flare = 0.002;              // seam slots' inner flare starts this far past the
+                                 // groove floor (see seam_slot)
 
 // screw thread in the base holes (right-handed). Along the helix coordinate
 // u = z - pitch * angle / 360 (mod pitch), with the angle measured about the
@@ -454,6 +456,13 @@ module slot_mouth()
 
 // waisted through-slot at a seam: 6 x 2 at both faces, 4 wide in the middle.
 // Face frame: t across, n from the outer face inward, z up; centred on z = zc
+//
+// The inner flare starts 0.002 past n = 2.6, the floor of the inner grooves
+// (wall - rec_d), and keeps its 45-degree slope and its end. The grooves are
+// placed from the inner face and the slot from the outer face, so a flare
+// starting in the groove floor's plane meets it a rounding error away, leaving
+// zero-width fins whose vertex pairs a merge on import folds into edges with
+// four faces.
 module seam_slot(zc)
     translate([0, 0, zc]) {
         slot_mouth();
@@ -461,8 +470,9 @@ module seam_slot(zc)
         hull() { oct_slab(2.2, 1.0, 0.318, 0.8); oct_slab(2.0, 1.0, 0.4, 1.0); }
         hull() { oct_slab(2.0, 1.0, 0.4, 1.0);   oct_slab(2.0, 1.0, 0.4, 1.8); }
         hull() { oct_slab(2.0, 1.0, 0.4, 1.8);   oct_slab(2.2, 1.0, 0.318, 2.0); }
-        hull() { oct_slab(3.0, 1.0, 0.4, 2.0);   oct_slab(3.0, 1.0, 0.4, 2.6); }
-        hull() { oct_slab(3.0, 1.0, 0.4, 2.6);   oct_slab(3.5, 1.5, 0.693, 3.1); }
+        hull() { oct_slab(3.0, 1.0, 0.4, 2.0);   oct_slab(3.0, 1.0, 0.4, 2.6 + seam_flare); }
+        hull() { oct_slab(3.0, 1.0, 0.4, 2.6 + seam_flare);
+                 oct_slab(3.5 - seam_flare, 1.5 - seam_flare, 0.693 - seam_flare * (2 - sqrt(2)), 3.1); }
     }
 
 // the slot through each outer corner, at the same height as the top seam slots;
@@ -694,7 +704,7 @@ module half_pad_cuts(wx, wy, outward) {
 module threaded_hole() {
     intersection() {
         union() {
-            rotate([0, 0, 90 / thr_steps]) translate([0, 0, -1])
+            rotate([0, 0, 180 / thr_steps]) translate([0, 0, -1])
                 cylinder(r = thr_r0 / cos(180 / thr_steps), h = hole_top + 1, $fn = thr_steps);
             thread_ridge(-thr_p, 3);
         }

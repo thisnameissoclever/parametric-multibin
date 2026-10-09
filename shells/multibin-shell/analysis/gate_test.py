@@ -75,6 +75,13 @@ def test_limits():
                       ("vertex max", dict(vmax=(0.0, lim["mx"] + 1e-9)))):
         check(f"report gate fails just over the {field} limit", compare.gate(row(**kw), {"K": []}, {"K": True}) == "FAIL")
     check("report gate fails an unsound render", compare.gate(row(), {"K": []}, {"K": False}) == "FAIL")
+    nan = float("nan")
+    check("report gate fails a NaN measurement, wherever it falls",
+          compare.gate(row(vmax=(0.0, nan)), {"K": []}, {"K": True}) == "FAIL"
+          and compare.gate(row(p99=(0.0, nan)), {"K": []}, {"K": True}) == "FAIL")
+    check("HARD fails a NaN metric", regress.hard_failures("K", dict(regress.HARD, mx=nan)))
+    check("DRIFT fails a NaN metric",
+          regress.drift_failures("K", dict.fromkeys(regress.DRIFT, nan), dict.fromkeys(regress.DRIFT, 0.0)))
     check("report gate fails a render message", compare.gate(row(), {"K": ["WARNING: x"]}, {"K": True}) == "FAIL")
     zero = dict.fromkeys(regress.DRIFT, 0.0)
     for field, tol in regress.DRIFT.items():
@@ -95,6 +102,8 @@ def test_messages():
                  "PolySet has nonplanar faces. Attempting alternate construction", "anything else"]:
         check(f"'{line[:20]}' is a message", compare.render_problems(normal + line) == [line])
     check("an expected text is not a message", compare.render_problems('ECHO: "NOTE: a"', ["NOTE: a"]) == [])
+    check("a render that is not simple is a message", compare.render_problems("Simple: no") == ["Simple: no"])
+    check("more than one solid is a message", compare.render_problems("Volumes: 3") == ["Volumes: 3"])
     check("an unexpected message fails", regress.message_failures("K", ["WARNING: x"], [], []))
     check("a missing expected message fails", regress.message_failures("K", [], ["NOTE: a"], []))
     check("an expected message seen passes", not regress.message_failures("K", [], ["NOTE: a"], ["NOTE: a"]))
@@ -110,6 +119,11 @@ def test_measure():
     check("the vertex sweep finds a corner moved 0.3 mm", abs(r["gen->ref"]["vmax"] - 0.3) < 1e-6)
     check("summary carries the vertex sweep into the maximum", compare.summary(r)["mx"] >= 0.3 - 1e-6)
     check("bounding box difference is measured", abs(r["bbox"] - 0.3) < 1e-6)
+    r, _ = compare.measure(m, m.copy().apply_scale(1.01), n_samples=2000)
+    check("volume difference is measured", abs(r["vol"] - (1.01 ** 3 - 1) * 100) < 1e-6)
+    taller = trimesh.creation.box(extents=(10, 10, 10.1))
+    r, _ = compare.measure(m, taller, n_samples=20000)
+    check("p99 sees a face 0.1 mm off", abs(compare.summary(r)["p99"] - 0.1) < 1e-3)
 
 
 def test_audit():
@@ -129,6 +143,10 @@ def test_audit():
     with np.errstate(divide="ignore", invalid="ignore"):       # the bow-tie encloses no volume
         bow_audit = compare.audit(stl("bowtie", bow))
     check("faces crossing while sharing a vertex are caught", bow_audit["crossing_depth"] > compare.CROSSING_LIMIT)
+    face = np.array([[0, 0, 0], [10, 0, 0], [0, 10, 0]], dtype=float)
+    needle = np.array([[2, 2, -1], [2, 2, 1], [2, 2, 0.5]], dtype=float)   # a flat sliver through the face
+    check("a zero-area triangle piercing a face is measured",
+          export_check.pair_depth(face, needle) >= 1.0 - 1e-9 and export_check.pair_depth(needle, face) >= 1.0 - 1e-9)
     check("two cubes touching at one vertex are two bodies",
           compare.audit(stl("touch", joined(cube(), cube((10, 10, 10)))))["bodies"] == 2)
     check("two separate cubes are not sound", not compare.clean(compare.audit(stl("apart", joined(cube(), cube((20, 0, 0)))))))
@@ -181,6 +199,22 @@ def test_3mf():
         with zipfile.ZipFile(path, "w") as z:
             z.writestr("3D/3dmodel.model", model(coords))
         check(f"3MF coincident vertices counted ({name})", export_check.coincident_3mf(path) == groups)
+    # two closed tetrahedra touching along an edge, with that edge's ends written
+    # twice, 0.000005 mm apart: merging within 0.00001 mm folds the two copies of
+    # the edge into one edge with four triangles
+    def tet(a, b, c, d):
+        return [(a, c, b), (a, b, d), (b, c, d), (c, a, d)]
+    coords = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1),
+              (0.000005, 0, 0), (1.000005, 0, 0), (0, -1, 0), (0, 0, -1)]
+    tris = tet(0, 1, 2, 3) + tet(4, 5, 6, 7)
+    path = TMP / "fin.3mf"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("3D/3dmodel.model", model(coords).replace(
+            "<triangles></triangles>",
+            "<triangles>" + "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}" />' for a, b, c in tris) + "</triangles>"))
+    check("3MF merge folds a fin into an edge with four triangles", export_check.merge_faults(path, 1e-5) == 1)
+    check("3MF merge leaves vertices farther apart than the distance", export_check.merge_faults(path, 1e-6) == 0)
+    check("3MF merge distances are 0.00001 and 0.0001 mm", export_check.MERGE_TOLS == (1e-5, 1e-4))
 
 
 class FakeSteps:
@@ -197,13 +231,17 @@ class FakeSteps:
         self.unseen = faults.get("unseen", [])
         self.unseen_fmt = faults.get("unseen_fmt", "stl")
         self.threemf = faults.get("threemf", 0)
+        self.merged = faults.get("merged", {})
         self.rejects = faults.get("rejects", True)
+        self.reject_writes = faults.get("reject_writes", False)
+        self.fail_refs = faults.get("fail_refs", [])
+        self.fail_renders = faults.get("fail_renders", [])
 
     def missing_refs(self):
         return list(self.missing)
 
     def generate(self, key, scad):
-        return f"ref/{key}", 1.0, list(self.ref_messages.get(key, []))
+        return (None if key in self.fail_refs else f"ref/{key}"), 1.0, list(self.ref_messages.get(key, []))
 
     def measure(self, key, path):
         return dict(dict.fromkeys(regress.DRIFT, 0.0), **self.measure_over.get(key, {}))
@@ -215,11 +253,17 @@ class FakeSteps:
 
     def render(self, name, params, scad, expected, fmt="stl"):
         if any(name == r[0] for r in regress.REJECTED):
-            return None, (expected[0] if self.rejects else ""), [], []
+            out = f"sound/{name}.{fmt}" if self.reject_writes else None
+            return out, (expected[0] if self.rejects else ""), [], []
+        if (name, fmt) in self.fail_renders:
+            return None, "render failed", [], []
         return f"sound/{name}.{fmt}", "", list(self.sound_messages.get(name, [])),             [e for e in expected if not (fmt == self.unseen_fmt and e in self.unseen)]
 
     def coincident_3mf(self, path):
         return self.threemf
+
+    def merge_faults(self, path):
+        return {tol: self.merged.get(tol, 0) for tol in regress.MERGE_TOLS}
 
     def load_baseline(self):
         return self.baseline
@@ -261,7 +305,16 @@ def test_run():
             ("an unsound configuration", dict(audit_over={"sound/half_w_1.5x1x1.stl": dict(bodies=2)}),
              "mesh not a clean single shell"),
             ("coincident 3MF vertices", dict(threemf=2), "3MF has 2"),
-            ("a size that is not rejected", dict(rejects=False), "rejected/")):
+            ("a 3MF that a merge within 0.00001 mm folds", dict(merged={1e-5: 2}),
+             "3MF merged within 1e-05 mm leaves 2 edge(s)"),
+            ("a 3MF that a merge within 0.0001 mm folds", dict(merged={1e-4: 3}),
+             "3MF merged within 0.0001 mm leaves 3 edge(s)"),
+            ("a size that is not rejected", dict(rejects=False), "rejected/"),
+            ("a rejected size that still writes a file", dict(reject_writes=True), "rejected/"),
+            ("a failed reference render", dict(fail_refs=[EXPECTED[0]]), f"{EXPECTED[0]}: render failed"),
+            ("a failed soundness render", dict(fail_renders=[("half_w_1.5x1x1", "stl")]),
+             "soundness/half_w_1.5x1x1: render failed"),
+            ("a failed 3MF render", dict(fail_renders=[(regress.THREEMF_CHECK[0], "3mf")]), "3MF render failed")):
         code, failures, _ = gate_run(locked, **kw)
         check(f"a run fails on {label}", code == 1 and has(failures, text))
     dropped = dict(locked, soundness=dict(locked["soundness"], extra_config={}))
@@ -276,6 +329,12 @@ def test_run():
     code, failures, written = gate_run(locked, update=True, accept=True,
                                        audit_over={f"ref/{EXPECTED[0]}": dict(watertight=False)})
     check("a relock never writes over a failure", code == 1 and written is None)
+    smaller = dict(locked, soundness=dict(locked["soundness"], extra_config={}))
+    code, failures, written = gate_run(smaller, update=True)
+    check("a relock refuses to drop a locked configuration without --accept-drift",
+          code == 1 and written is None and has(failures, "locked configuration no longer checked"))
+    check("the 3MF check covers both half-LU sizes and the 4 x 1 x 1 seams",
+          regress.THREEMF_CHECK == ["thin_1.5x0.5x1", "half_both_2.5x1.5x1.5", "wide_4x1x1"])
     check("a relock without the soundness section is refused", gate_run(locked, update=True, quick=True)[0] == 2)
     check("a relock from another SCAD is refused", gate_run(locked, update=True, alternate=True)[0] == 2)
     check("a run without a baseline stops", gate_run(None)[0] == 2)

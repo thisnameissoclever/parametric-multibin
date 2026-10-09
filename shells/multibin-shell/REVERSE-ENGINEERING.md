@@ -36,7 +36,7 @@ Each 50 mm cell stands on its own pad.
 - Pad sides are vertical, inset 3.2 from the cell edge, up to z 3.6, then turn out at 45 degrees; the outer flat faces reach full size at z 6.8.
 - Pad corners are chamfered with leg 5.448 (the generator uses 5.4483, which puts the pad's corner faces exactly on the corner planes described next). Each corner face sits 2.2 inside a 45 degree corner face of leg 8.737 on the cell's own outline (at a shell corner, the shell's outer corner face) and chamfers out at 45 degrees to meet it at z 5.8.
 - The pad's bottom edge has a 0.4 mm 45 degree chamfer.
-- Between neighbouring pads, the floor's underside is at z 5.2. In the gap between two pads' 45 degree faces it stops at z 5.4 instead: beside the flat part of each pad side between columns, and along the whole length of each seam between rows, through the crossings. The gap's half width at height z is 6.8 - z.
+- Between neighbouring pads, the floor's underside is at z 5.2. In the gap between two pads' 45 degree faces it stops at z 5.4 instead: beside the flat part of each pad side between columns, and along each seam between rows, through the crossings, out to the ends of the outermost pads' flat sides. The gap's half width at height z is 6.8 - z.
 - Where a face carries a rail channel, the channel's dovetail runs down through the foot to the base.
 
 ## Base pockets and holes
@@ -77,7 +77,7 @@ Every recess has the same section: 0.4 deep and 2.2 tall, rising at 1:2 (0.8 tal
 
 ## Clip slots through the walls
 
-- Seam slots at each seam between cells, on every face and every wall kind, centred at z 27 + 25k up to 1 below the rim. Each is 6 x 2 (half sizes 3.0 x 1.0 with 0.4 corner chamfers) from the outer face to depth 0.8 and from depth 2.0 to the inner face. Between depths 0.8 and 2.0 it narrows to 4 wide, with a 0.2 mm 45 degree chamfer on each step's edge. The opening has a 0.2 chamfer at the outer face and a 0.4 chamfer at the inner face.
+- Seam slots at each seam between cells, on every face and every wall kind, centred at z 27 + 25k up to 1 below the rim. Each is 6 x 2 (half sizes 3.0 x 1.0 with 0.4 corner chamfers) from the outer face to depth 0.8 and from depth 2.0 to the inner face. Between depths 0.8 and 2.0 it narrows to 4 wide, with a 0.2 mm 45 degree chamfer on each step's edge. The opening has a 0.2 chamfer at the outer face and a 0.4 chamfer at the inner face (the generator starts it 0.002 deeper; see `DEVIATIONS.md` M4).
 - Corner slots through each diagonal corner face, centred 3 below the rim. The corner wall is 2.0 thick, so only the outer 2.0 of the seam slot section exists there, with a 0.2 chamfer where it opens into the cavity.
 
 ## Wall kinds on each side
@@ -89,8 +89,8 @@ MultiBuild publishes each shell with one wall kind on all four sides. Every feat
 Run these from the `analysis` folder with the repository's Python environment, `..\..\..\.venv\Scripts\python.exe`. `docs/verification-method.md` at the repository root defines the gates they serve.
 
 - `compare.py` renders each reference configuration and reports the Gate 1 metrics, exiting 1 when any fails; `--report` rewrites `VERIFICATION.md` and refuses unless every expected reference is present.
-- `regress.py` is the regression gate, with its locked `baseline.json`; it also exports two half-LU sizes as 3MF and checks them. `selftest.py` runs `gate_test.py` and `mutation_test.py`, then the gate against the known-bad fixture in `fixtures`, checking that the gate reports the failures the fixture is known to cause.
-- `export_check.py` counts three of the mesh artifacts described in `DEVIATIONS.md` M2: zero-area triangles, vertices closer together than 0.0001 mm, and crossing triangles.
+- `regress.py` is the regression gate, with its locked `baseline.json`; it also exports three sizes as 3MF and checks them as `DEVIATIONS.md` M2 describes. `selftest.py` runs `gate_test.py` and `mutation_test.py`, then the gate against the known-bad fixture in `fixtures`, checking that the gate reports the failures the fixture is known to cause.
+- `export_check.py` counts three of the mesh artifacts described in `DEVIATIONS.md` M2: zero-area triangles, vertices closer together than 0.0001 mm, and crossing triangles. For a 3MF file it counts separate vertices at identical coordinates, and the edges that merging close vertices leaves shared by other than two triangles.
 - `gate_test.py` tests the gate's decisions at their limits, and drives the gate's whole run with stand-in renders through each kind of failure, in about a second. `mutation_test.py` breaks the gate's checks, and the run that combines them, one way at a time in a copy, and checks that `gate_test.py` notices each break.
 - `worst_points.py` lists the worst vertex deviations with their locations; `wall_depth.py` measures recess depth along a vertical line on a wall.
 - `fingerprint.py` (plane inventory), `section.py` (sections with circle fits), `window.py` (windowed sections), `facemap.py` (ray-cast depth images) and `thread_fit.py` (thread profile fit) were used to take the measurements above.

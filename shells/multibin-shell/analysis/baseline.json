@@ -2,10 +2,10 @@
   "models": {
     "T111": {
       "bbox": 0.0,
-      "vol": 0.01163998877523839,
-      "p99": 0.010752306434271794,
+      "vol": 0.011617133953552038,
+      "p99": 0.010765872512550533,
       "mx": 0.018792130089052846,
-      "render_s": 15.9,
+      "render_s": 15.1,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -15,8 +15,8 @@
     },
     "T212": {
       "bbox": 0.0,
-      "vol": 0.009080038436710177,
-      "p99": 0.009755494682182524,
+      "vol": 0.009186632760720525,
+      "p99": 0.009772408260006072,
       "mx": 0.018793962319198193,
       "render_s": 28.5,
       "watertight": true,
@@ -28,10 +28,10 @@
     },
     "T313": {
       "bbox": 0.0,
-      "vol": 0.007967188349473539,
-      "p99": 0.009393893784031795,
+      "vol": 0.008145811284336245,
+      "p99": 0.009404684708271615,
       "mx": 0.018793962319198193,
-      "render_s": 46.0,
+      "render_s": 45.8,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -41,10 +41,10 @@
     },
     "T3135": {
       "bbox": 0.0,
-      "vol": 0.007465146579549859,
-      "p99": 0.008349958429808527,
+      "vol": 0.0076543229234198006,
+      "p99": 0.008428864155959167,
       "mx": 0.018793962319198193,
-      "render_s": 50.0,
+      "render_s": 49.8,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -54,10 +54,10 @@
     },
     "T323": {
       "bbox": 0.0,
-      "vol": 0.009343030707866384,
-      "p99": 0.01041191628066414,
+      "vol": 0.00952619649741215,
+      "p99": 0.010246031118557286,
       "mx": 0.018793962319198193,
-      "render_s": 74.4,
+      "render_s": 73.6,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -67,10 +67,10 @@
     },
     "T1215": {
       "bbox": 0.0,
-      "vol": 0.01043144249356274,
-      "p99": 0.010256360476749866,
+      "vol": 0.010526591391059168,
+      "p99": 0.010223346584704255,
       "mx": 0.018792130089052846,
-      "render_s": 26.7,
+      "render_s": 26.6,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -80,8 +80,8 @@
     },
     "O111": {
       "bbox": 0.0,
-      "vol": 0.013376041341988101,
-      "p99": 0.011625925232655614,
+      "vol": 0.013352457827029577,
+      "p99": 0.011252164344668358,
       "mx": 0.018792130089052846,
       "render_s": 15.3,
       "watertight": true,
@@ -93,10 +93,10 @@
     },
     "O212": {
       "bbox": 0.0,
-      "vol": 0.009923777697783817,
-      "p99": 0.010808337289886975,
+      "vol": 0.010032068044735385,
+      "p99": 0.010808465422645734,
       "mx": 0.018793962319198193,
-      "render_s": 29.1,
+      "render_s": 28.8,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -106,10 +106,10 @@
     },
     "O323": {
       "bbox": 0.0,
-      "vol": 0.009843779235770272,
-      "p99": 0.010509952867262869,
+      "vol": 0.010028820709662307,
+      "p99": 0.010302893643914941,
       "mx": 0.018793962319198193,
-      "render_s": 74.8,
+      "render_s": 74.2,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -119,10 +119,10 @@
     },
     "O1215": {
       "bbox": 0.0,
-      "vol": 0.011502644032161393,
-      "p99": 0.01076361975947668,
+      "vol": 0.011599661097148163,
+      "p99": 0.010743865599108402,
       "mx": 0.018792130089052846,
-      "render_s": 27.0,
+      "render_s": 26.7,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -132,8 +132,8 @@
     },
     "S111": {
       "bbox": 0.0,
-      "vol": 0.00666721879442726,
-      "p99": 0.009067186428062295,
+      "vol": 0.006648744085509617,
+      "p99": 0.009226557475367393,
       "mx": 0.018792130089052846,
       "render_s": 11.9,
       "watertight": true,
@@ -145,8 +145,8 @@
     },
     "S212": {
       "bbox": 0.0,
-      "vol": 0.003939302182424133,
-      "p99": 0.006603860714096118,
+      "vol": 0.00402351827492132,
+      "p99": 0.0068330271330691045,
       "mx": 0.018793962319198193,
       "render_s": 20.5,
       "watertight": true,
@@ -158,10 +158,10 @@
     },
     "S323": {
       "bbox": 0.0,
-      "vol": 0.004447932935318762,
-      "p99": 0.006914609039079839,
+      "vol": 0.00459529487112535,
+      "p99": 0.007123098032348797,
       "mx": 0.018793962319198193,
-      "render_s": 53.5,
+      "render_s": 52.5,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -171,8 +171,8 @@
     },
     "S1215": {
       "bbox": 0.0,
-      "vol": 0.005507896481287178,
-      "p99": 0.008561158240033333,
+      "vol": 0.00558465582771365,
+      "p99": 0.008386115615710198,
       "mx": 0.018792130089052846,
       "render_s": 19.9,
       "watertight": true,
@@ -190,14 +190,14 @@
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": -0.0,
+      "crossing_depth": 0.0,
       "extents": [
         75.0,
         50.0,
         55.0
       ],
-      "volume": 37055.145,
-      "digest": "87d8c2c5900570507b36bbb65300e01a43a9118eaa1fb7827aed23d69eadd3fe"
+      "volume": 37055.179,
+      "digest": "e9ef1030ca4bff9f177488dde5b91ae0560f3e71f591022d8fe675448a026c01"
     },
     "half_h_2x1.5x2": {
       "watertight": true,
@@ -211,8 +211,8 @@
         75.0,
         105.0
       ],
-      "volume": 97273.406,
-      "digest": "8094fe9acb0ea8996cde80a1ecd2fbac01f2f63418505233bf407efda19b3575"
+      "volume": 97273.57,
+      "digest": "e1b1a0d09d3b3fa267b4cb604007597c20198cffec70914c68bbbd901d363c11"
     },
     "half_both_2.5x1.5x1.5": {
       "watertight": true,
@@ -226,8 +226,8 @@
         75.0,
         80.0
       ],
-      "volume": 96541.688,
-      "digest": "8bcc82ccd69a71e18fd2d2d8c8ab31dc8fc6afcf8f32578c97a44772633f65ed"
+      "volume": 96541.872,
+      "digest": "e16d7744a5cef9f56f5c6c8816331577e753e050d5d3dbd4ee2f19643a01c472"
     },
     "thin_1.5x0.5x1": {
       "watertight": true,
@@ -235,14 +235,14 @@
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": -0.0,
+      "crossing_depth": 0.0,
       "extents": [
         75.0,
         25.0,
         55.0
       ],
-      "volume": 25269.6,
-      "digest": "215ef5e6ec3c0fe5f6af11c3b2f9f6edb74de0a7e4e317dd70c189042ea92a79"
+      "volume": 25269.638,
+      "digest": "aaa01299dc02d2a3527525a49c8aeb917eaff8c038223f225a837e84a66e52de"
     },
     "deep_1x1x4": {
       "watertight": true,
@@ -256,8 +256,8 @@
         50.0,
         205.0
       ],
-      "volume": 75299.833,
-      "digest": "01315f21d79b4fadb34f69728ad974466d3e1b890cf3e7d304992064736d14d9"
+      "volume": 75299.827,
+      "digest": "16693d51a0a7c3bcc0d2243e6162999425ac2c08bb001b1f6d9c7dfdc6bc1164"
     },
     "tall_1x1x12": {
       "watertight": true,
@@ -271,8 +271,8 @@
         50.0,
         605.0
       ],
-      "volume": 207999.479,
-      "digest": "22512b8c7909d65f14083b168ab9a7604b93f0fae05cf74aef6c41541989e12c"
+      "volume": 207999.473,
+      "digest": "86ddec3cfe7872b838ab423db46371dc7d9949591c53c3613580eb1e74222eaa"
     },
     "wide_4x1x1": {
       "watertight": true,
@@ -280,14 +280,14 @@
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 5.3947966093944364e-06,
+      "crossing_depth": 0.0,
       "extents": [
         200.0,
         50.0,
         55.0
       ],
-      "volume": 87168.937,
-      "digest": "cde95075fc0bc4da97d767a75e11e698b99ab8cd57216c0cba9eacfa2f53e444"
+      "volume": 87169.041,
+      "digest": "39b51f7b7bb3361602d3029eb7c57f8e30d673d8bb14e48461678d94ee8ae0ad"
     },
     "long_1x7x1": {
       "watertight": true,
@@ -301,8 +301,8 @@
         350.0,
         55.0
       ],
-      "volume": 148800.402,
-      "digest": "fa833656009617a71299208d8389b4ef794f5e24b91b7ed3c27510993c7c8670"
+      "volume": 148800.615,
+      "digest": "296a103f94c4fc1d3a47e832d320f3509ba18848a1bb1348a07d0ab646f51dbc"
     },
     "wide_12x1x1": {
       "watertight": true,
@@ -316,8 +316,8 @@
         50.0,
         55.0
       ],
-      "volume": 251519.513,
-      "digest": "e6106beef3c7c3dfe5ed024474c263d7ee9223d980835caf78618ea20d394e05"
+      "volume": 251519.909,
+      "digest": "202240594d593c5a311b9d9473763825ff8f721c513bd64caa1e06e4c88fc1ca"
     },
     "long_1x12x1": {
       "watertight": true,
@@ -331,8 +331,8 @@
         600.0,
         55.0
       ],
-      "volume": 251519.509,
-      "digest": "baca566a58d02d5687ea56dece130434dc705a26896f79019124d52305997d43"
+      "volume": 251519.905,
+      "digest": "fd4c1e28e916ebe56a1d15f8a10dcb88d39adb74831b9c66755f35e829dc98b8"
     },
     "long_mixed_2.5x7.5x1.5": {
       "watertight": true,
@@ -346,8 +346,8 @@
         375.0,
         80.0
       ],
-      "volume": 353484.897,
-      "digest": "fb97f8730ae3337c9facfd2f0121b8a5f67959ba292ab3a9e3ddcb1d4cb9ab85"
+      "volume": 353485.407,
+      "digest": "d22a41a9ff2290f40d6021fe7734641adbf9e8512f62305a9c00c4045a47556e"
     },
     "mixed_walls_2x2x1": {
       "watertight": true,
@@ -361,8 +361,8 @@
         100.0,
         55.0
       ],
-      "volume": 78867.703,
-      "digest": "015799d8ff484ddc3a29bc0a9b2f0ee06f3844b9a6ad0707879688557c1e36c6"
+      "volume": 78867.765,
+      "digest": "43a665b8d61c1c24d8c764261b36a6c0d2b59e0ca13039daf49a9ab76c725680"
     },
     "simple_2x1x2": {
       "watertight": true,
@@ -376,8 +376,8 @@
         50.0,
         105.0
       ],
-      "volume": 93617.232,
-      "digest": "e3076fa275296ee3d91d6a8907183627c71de0bdda0c418bff042df1536bc2b7"
+      "volume": 93617.311,
+      "digest": "6b3b6b0cd90e57a933e1ac50eb34e05d82a1ab7071d02c22557a899b36a6c528"
     },
     "topless_half_2.5x1.5x1.5": {
       "watertight": true,
@@ -385,14 +385,14 @@
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 0.0,
+      "crossing_depth": -0.0,
       "extents": [
         125.0,
         75.0,
         80.0
       ],
-      "volume": 95358.731,
-      "digest": "0d3edf69581d6727a682879c59b9ad907ac537a16ee2f88307c2adbf1d73211b"
+      "volume": 95358.915,
+      "digest": "cd0b7d762bf8b1632d248a17af8fc11ec31aa3cee35d86a6843c8baca0100097"
     },
     "simple_half_1.5x2x2.5": {
       "watertight": true,
@@ -406,8 +406,8 @@
         100.0,
         130.0
       ],
-      "volume": 139829.965,
-      "digest": "1cfe5154cc1b0976ad8e1dca355547f483af09055d1291d9208fe16fb9913710"
+      "volume": 139830.181,
+      "digest": "63ddd6a157c9a54a6b4e8648e26ed19328c26920348003088fcda3cf00eea7d9"
     }
   }
 }
