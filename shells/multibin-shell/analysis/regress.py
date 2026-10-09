@@ -8,8 +8,9 @@ Run after ANY change to the SCAD. Three layers of checking:
   DRIFT      no reference metric may get worse than the locked baseline by more
              than a small tolerance.
   SOUNDNESS  configurations with no reference: mesh soundness (see
-             compare.audit) and an exact geometry digest against the baseline,
-             so any change to their shape fails until it is relocked.
+             compare.audit), and a digest of their vertices and their volume
+             against the baseline, so any change to their shape fails until it
+             is relocked.
 
 Every reference in refs.EXPECTED and every configuration in the baseline must
 be checked on every full run; a missing reference file or a dropped
@@ -22,7 +23,8 @@ Requires the packages in requirements.txt at the repository root.
 
 Usage:
   python regress.py                    check against analysis/baseline.json
-  python regress.py --update-baseline  relock the baseline (refused over any failure)
+  python regress.py --update-baseline  relock the baseline (refused over any failure, and
+                                       over any drift or shape change unless --accept-drift)
   python regress.py --quick            skip the soundness section (not with --update-baseline)
   python regress.py --scad PATH        check a different SCAD (selftest.py uses this)
 """
@@ -33,17 +35,20 @@ import sys
 from pathlib import Path
 
 import compare
-from compare import EXPORT_FORMAT, OPENSCAD, audit, clean, generate, metrics, out_for, render_problems
+from compare import EXPORT_FORMAT, LIMITS, OPENSCAD, audit, clean, generate, metrics, out_for, render_problems, summary
+from export_check import coincident_3mf
 from refs import EXPECTED, STL_DIR, fname
 
 BASELINE = Path(__file__).parent / "baseline.json"
-HARD = dict(bbox=0.02, vol=0.5, p99=0.05, mx=0.2)
+HARD = LIMITS
 DRIFT = dict(bbox=0.002, vol=0.01, p99=0.002, mx=0.002)
+# repeat renders give the same vertices and the same volume to 0.001 mm3
+SOUND_VOL = 0.01
 
 W = '"{}"'
 SOUNDNESS = [
     ("half_w_1.5x1x1",     dict(width_lu=1.5, height_lu=1, depth_lu=1)),
-    # typed off the half-LU step: must round to 1.5 x 1 x 1, the same digest as above
+    # typed off the half-LU step: rounds up to 1.5 x 1.5 x 1
     ("offstep_1.3x1.1x0.8", dict(width_lu=1.3, height_lu=1.1, depth_lu=0.8)),
     ("half_h_2x1.5x2",     dict(width_lu=2, height_lu=1.5, depth_lu=2)),
     ("half_both_2.5x1.5x1.5", dict(width_lu=2.5, height_lu=1.5, depth_lu=1.5)),
@@ -72,11 +77,17 @@ SOUNDNESS = [
                                 left_wall=W.format("simple"), right_wall=W.format("simple"))),
 ]
 
+# configurations also exported as 3MF, which keeps separate vertices apart by
+# index: none may write two separate vertices at identical coordinates
+THREEMF_CHECK = ["thin_1.5x0.5x1", "half_both_2.5x1.5x1.5"]
+
 # console texts a configuration must print, and may print without failing
 EXPECTED_MESSAGES = {
-    "offstep_1.3x1.1x0.8": ["NOTE: width_lu = 1.3 is not on the half-LU grid; using 1.5.",
-                            "NOTE: height_lu = 1.1 is not on the half-LU grid; using 1.",
+    "offstep_1.3x1.1x0.8": ["NOTE: width_lu = 1.3 is not on the half-LU grid, so it is rounded up; using 1.5.",
+                            "NOTE: height_lu = 1.1 is not on the half-LU grid, so it is rounded up; using 1.5.",
                             "NOTE: depth_lu = 0.8 is below the minimum; using 1."],
+    "thin_1.5x0.5x1": ["NOTE: left_wall = topped has no effect: the side is shorter than 1 LU, so it has no rail channel.",
+                       "NOTE: right_wall = topped has no effect: the side is shorter than 1 LU, so it has no rail channel."],
 }
 
 
@@ -107,10 +118,23 @@ def sound_failures(name, a, was):
         return out
     if was == "absent":
         return out + [f"soundness/{name}: absent from baseline; relock to cover it"]
-    if a["digest"] != was["digest"]:
+    dv = a["volume"] - was["volume"]
+    if a["digest"] != was["digest"] or abs(dv) > SOUND_VOL:
         de = max(abs(x - y) for x, y in zip(a["extents"], was["extents"]))
-        dv = a["volume"] - was["volume"]
         out.append(f"soundness/{name}: geometry changed vs baseline (bbox {de:.4f} mm, volume {dv:+.3f} mm3)")
+    return out
+
+
+def relock_changes(current, sound_now, old):
+    """What a relock would accept: reference drift and configuration shape
+    changes against the baseline being replaced."""
+    out = []
+    for key, m in current.items():
+        if key in old.get("models", {}):
+            out += drift_failures(key, m, old["models"][key])
+    for name, a in sound_now.items():
+        if name in old.get("soundness", {}):
+            out += [f for f in sound_failures(name, a, old["soundness"][name]) if "geometry changed" in f]
     return out
 
 
@@ -130,14 +154,14 @@ def coverage_failures(missing, base, update, quick, sound_names):
 
 # ------------------------------------------------------------------ running
 
-def render(name, params, scad, expected=()):
+def render(name, params, scad, expected=(), fmt="stl"):
     """Render a configuration; returns (path or None, error text, problems, expected texts seen)."""
     d = out_for(scad) / "soundness"
     d.mkdir(parents=True, exist_ok=True)
-    stl = d / f"{name}.stl"
+    stl = d / f"{name}.{fmt}"
     if stl.exists():
         stl.unlink()
-    args = [OPENSCAD, "-o", str(stl), *EXPORT_FORMAT, str(scad)]
+    args = [OPENSCAD, "-o", str(stl), *(EXPORT_FORMAT if fmt == "stl" else []), str(scad)]
     for k, v in params.items():
         args += ["-D", f"{k}={v}"]
     r = subprocess.run(args, capture_output=True, text=True, timeout=3600)
@@ -146,15 +170,9 @@ def render(name, params, scad, expected=()):
     return (stl if stl.exists() else None), r.stderr[-2000:], problems, seen
 
 
-def collapse(row):
-    a, b = row["ref->gen"], row["gen->ref"]
-    return dict(bbox=float(row["bbox"]), vol=float(row["vol"]),
-                p99=float(max(a["p99"], b["p99"])),
-                mx=float(max(a["mx"], b["mx"], a["vmax"], b["vmax"])))
-
-
 def main():
     update = "--update-baseline" in sys.argv
+    accept = "--accept-drift" in sys.argv
     quick = "--quick" in sys.argv
     scad = compare.SCAD
     if "--scad" in sys.argv:
@@ -184,10 +202,10 @@ def main():
         if p is None:
             failures.append(f"{key}: render failed")
             continue
-        m = collapse(metrics(key, p, 0))
+        m = summary(metrics(key, p, 0))
         a = audit(p)
         m.update(render_s=round(secs, 1),
-                 **{k: a[k] for k in ("watertight", "bodies", "bad_edges", "dup_faces", "crossing_depth")})
+                 **{k: a[k] for k in ("watertight", "winding", "bodies", "bad_edges", "dup_faces", "crossing_depth")})
         current[key] = m
         failures += hard_failures(key, m)
         if not clean(a):
@@ -216,8 +234,27 @@ def main():
             failures += found
             state = "ok" if not found else "CHANGED" if clean(a) else "BROKEN"
             print(f"  {name:24} {state:7} bbox={a['extents']} vol={a['volume']}")
+            if name in THREEMF_CHECK:
+                tmf, err, problems, seen = render(name, params, scad, expected, fmt="3mf")
+                failures += message_failures(f"soundness/{name} 3MF", problems, expected, seen)
+                groups = coincident_3mf(tmf) if tmf else None
+                if groups is None:
+                    failures.append(f"soundness/{name}: 3MF render failed")
+                elif groups:
+                    failures.append(f"soundness/{name}: 3MF has {groups} group(s) of separate vertices at identical coordinates")
+                print(f"  {name:24} 3MF     coincident vertex groups: {groups}")
 
     if update:
+        # a relock must not quietly accept a regression: list what it would
+        # change, and require --accept-drift once the change is known to be intended
+        old = json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {}
+        changes = relock_changes(current, sound_now, old)
+        if changes and not accept:
+            failures += changes + ["relock would accept the changes above; rerun with --accept-drift if they are intended"]
+        elif changes:
+            print(f"accepting {len(changes)} change(s) against the old baseline:")
+            for f in changes:
+                print(f"  - {f}")
         # a baseline locked over a failure would hide it from every later run
         if failures:
             print(f"NOT RELOCKED - {len(failures)} problem(s):")

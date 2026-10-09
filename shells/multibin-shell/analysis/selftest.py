@@ -1,7 +1,9 @@
-"""Prove the regression gate works, in two steps:
+"""Prove the regression gate works, in three steps:
 
 1. gate_test.py checks every decision of the gate at its limits, in seconds.
-2. A full run of regress.py against the known-bad fixture must fail, and each
+2. mutation_test.py breaks the gate one way at a time and checks that
+   gate_test.py notices each break, in about a minute.
+3. A full run of regress.py against the known-bad fixture must fail, and each
    section of the gate must report a failure the fixture is known to cause.
 
 The fixture, fixtures/frozen_a6ff94e.scad, is the generator as of commit
@@ -16,12 +18,14 @@ a6ff94e. Against the current baseline it has, among other faults:
   soundness, shape   half-LU shells differ in several ways, among them channels
                      blocked over half pads and missing half-pad clip pockets
   soundness, mesh    broken pocket slits on 1 x 7 x 1
+  3MF export         its threaded holes' entry cones cross the thread at shared
+                     angles, leaving separate vertices at identical coordinates
 
 A gate section that stopped working would drop its line from the output, so
 the self-test checks each line, not only the exit status.
 
-Usage: python selftest.py     (about 40 minutes, almost all of it step 2)
-Exits 0 when both steps pass, 1 otherwise.
+Usage: python selftest.py     (about 40 minutes, almost all of it step 3)
+Exits 0 when all three steps pass, 1 otherwise.
 """
 
 import subprocess
@@ -40,6 +44,7 @@ EXPECTED_FAILURES = [
     ("DRIFT", "T111: DRIFT mx"),
     ("soundness shape", "soundness/half_w_1.5x1x1: geometry changed vs baseline"),
     ("soundness mesh", "soundness/long_1x7x1: mesh not a clean single shell"),
+    ("3MF export", "soundness/half_both_2.5x1.5x1.5: 3MF has"),
 ]
 
 
@@ -47,6 +52,9 @@ def main():
     unit = subprocess.run([sys.executable, str(HERE / "gate_test.py")], capture_output=True, text=True, cwd=HERE)
     print(unit.stdout.strip().splitlines()[-1] if unit.stdout.strip() else unit.stderr[-2000:])
     ok = unit.returncode == 0
+    mut = subprocess.run([sys.executable, str(HERE / "mutation_test.py")], capture_output=True, text=True, cwd=HERE)
+    print(mut.stdout.strip().splitlines()[-1] if mut.stdout.strip() else mut.stderr[-2000:])
+    ok &= mut.returncode == 0
     r = subprocess.run([sys.executable, str(HERE / "regress.py"), "--scad", str(FIXTURE)],
                        capture_output=True, text=True, cwd=HERE)
     out = r.stdout + r.stderr
@@ -61,7 +69,8 @@ def main():
         print(f"  {'caught ' if found else 'MISSED '} {section:26} {text}")
         ok &= found
     print(f"full gate output: {log}")
-    print("SELF-TEST PASS: the gate's decisions hold at their limits and it caught every expected failure"
+    print("SELF-TEST PASS: the gate's decisions hold at their limits, its tests catch every mutation, "
+          "and it caught every expected failure"
           if ok else "SELF-TEST FAIL")
     return 0 if ok else 1
 

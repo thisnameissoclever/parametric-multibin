@@ -8,11 +8,13 @@ Usage: python gate_test.py     (exits 1 if any test fails)
 """
 
 import sys
+import zipfile
 
 import numpy as np
 import trimesh
 
 import compare
+import export_check
 import regress
 from refs import EXPECTED
 
@@ -44,8 +46,16 @@ def joined(*meshes):
     return trimesh.Trimesh(np.vstack(v), np.vstack(f), process=False)
 
 
+def row(bbox=0.0, vol=0.0, p99=(0.0, 0.0), mx=(0.0, 0.0), vmax=(0.0, 0.0), key="K"):
+    """A compare.measure row with chosen values, for the gate's decisions."""
+    return dict(key=key, bbox=bbox, vol=vol,
+                **{tag: dict(mean=0.0, p95=0.0, p99=p99[i], mx=mx[i], vmax=vmax[i])
+                   for i, tag in enumerate(("ref->gen", "gen->ref"))})
+
+
 def test_limits():
     check("HARD limits are the Gate 1 limits", regress.HARD == dict(bbox=0.02, vol=0.5, p99=0.05, mx=0.2))
+    check("regress and compare share one copy of the limits", regress.HARD is compare.LIMITS)
     check("DRIFT tolerances", regress.DRIFT == dict(bbox=0.002, vol=0.01, p99=0.002, mx=0.002))
     check("crossing limit", compare.CROSSING_LIMIT == 1e-3)
     check("renders are exported as binary STL", compare.EXPORT_FORMAT == ["--export-format", "binstl"])
@@ -54,6 +64,18 @@ def test_limits():
         over = dict(regress.HARD, **{field: limit + 1e-9})
         check(f"HARD {field} at the limit passes", not regress.hard_failures("K", at))
         check(f"HARD {field} just over the limit fails", regress.hard_failures("K", over))
+    s = compare.summary(row(p99=(0.01, 0.03), mx=(0.02, 0.01), vmax=(0.04, 0.05)))
+    check("summary takes p99 from the worse direction", s["p99"] == 0.03)
+    check("summary takes the maximum over samples and vertices, both directions", s["mx"] == 0.05)
+    lim = compare.LIMITS
+    at = row(bbox=lim["bbox"], vol=lim["vol"], p99=(lim["p99"],) * 2, mx=(lim["mx"],) * 2, vmax=(lim["mx"],) * 2)
+    check("report gate passes at every limit", compare.gate(at, {"K": []}, {"K": True}) == "PASS")
+    for field, kw in (("bbox", dict(bbox=lim["bbox"] + 1e-9)), ("vol", dict(vol=lim["vol"] + 1e-9)),
+                      ("p99", dict(p99=(0.0, lim["p99"] + 1e-9))), ("mx", dict(mx=(lim["mx"] + 1e-9, 0.0))),
+                      ("vertex max", dict(vmax=(0.0, lim["mx"] + 1e-9)))):
+        check(f"report gate fails just over the {field} limit", compare.gate(row(**kw), {"K": []}, {"K": True}) == "FAIL")
+    check("report gate fails an unsound render", compare.gate(row(), {"K": []}, {"K": False}) == "FAIL")
+    check("report gate fails a render message", compare.gate(row(), {"K": ["WARNING: x"]}, {"K": True}) == "FAIL")
     zero = dict.fromkeys(regress.DRIFT, 0.0)
     for field, tol in regress.DRIFT.items():
         check(f"DRIFT {field} at the tolerance passes", not regress.drift_failures("K", dict(zero, **{field: tol}), zero))
@@ -78,9 +100,35 @@ def test_messages():
     check("an expected message seen passes", not regress.message_failures("K", [], ["NOTE: a"], ["NOTE: a"]))
 
 
+def test_measure():
+    m = cube()
+    r, _ = compare.measure(m, m.copy(), n_samples=2000)
+    check("identical meshes measure zero", max(compare.summary(r).values()) < 1e-9)
+    moved = m.vertices.copy()
+    moved[np.argmax(moved.sum(axis=1)), 0] += 0.3          # pull the +x+y+z corner out 0.3 in x
+    r, _ = compare.measure(m, trimesh.Trimesh(moved, m.faces, process=False), n_samples=2000)
+    check("the vertex sweep finds a corner moved 0.3 mm", abs(r["gen->ref"]["vmax"] - 0.3) < 1e-6)
+    check("summary carries the vertex sweep into the maximum", compare.summary(r)["mx"] >= 0.3 - 1e-6)
+    check("bounding box difference is measured", abs(r["bbox"] - 0.3) < 1e-6)
+
+
 def test_audit():
     a = compare.audit(stl("cube", cube()))
     check("a cube is sound", compare.clean(a) and a["bodies"] == 1)
+    for field, bad in (("watertight", False), ("winding", False), ("volume", -1.0), ("bodies", 2),
+                       ("bad_edges", 1), ("dup_faces", 1), ("crossing_depth", compare.CROSSING_LIMIT + 1e-9)):
+        check(f"clean rejects {field} = {bad}", not compare.clean(dict(a, **{field: bad})))
+    flipped = cube()
+    faces = flipped.faces.copy()
+    faces[0] = faces[0][::-1]
+    check("a face wound the wrong way is caught",
+          not compare.audit(stl("flipped", trimesh.Trimesh(flipped.vertices, faces, process=False)))["winding"])
+    v = np.array([[0, 0, 10], [-5, -5, 0], [5, -5, 0], [5, 5, 0], [-5, 5, 0]], dtype=float)
+    bow = trimesh.Trimesh(v, np.array([[0, 1, 3], [0, 3, 2], [0, 2, 4], [0, 4, 1], [1, 2, 3], [2, 1, 4]]),
+                          process=False)
+    with np.errstate(divide="ignore", invalid="ignore"):       # the bow-tie encloses no volume
+        bow_audit = compare.audit(stl("bowtie", bow))
+    check("faces crossing while sharing a vertex are caught", bow_audit["crossing_depth"] > compare.CROSSING_LIMIT)
     check("two cubes touching at one vertex are two bodies",
           compare.audit(stl("touch", joined(cube(), cube((10, 10, 10)))))["bodies"] == 2)
     check("two separate cubes are not sound", not compare.clean(compare.audit(stl("apart", joined(cube(), cube((20, 0, 0)))))))
@@ -99,10 +147,39 @@ def test_audit():
     d0 = compare.audit(stl("cube", m))["digest"]
     check("digest ignores triangle order and starting corner",
           compare.audit(stl("shuffled", trimesh.Trimesh(m.vertices, shuffled, process=False)))["digest"] == d0)
-    moved = m.vertices.copy()
-    moved[0, 0] += 1e-4
-    check("digest changes when a vertex moves 0.0001 mm",
-          compare.audit(stl("moved", trimesh.Trimesh(moved, m.faces, process=False)))["digest"] != d0)
+    # split one square face along its other diagonal: same vertices, different triangles
+    resplit = m.faces.copy()
+    quad = [i for i in range(len(resplit)) if np.allclose(m.face_normals[i], [0, 0, 1])]
+    a0, a1 = resplit[quad[0]], resplit[quad[1]]
+    corners = list(dict.fromkeys(list(a0) + list(a1)))
+    shared = [x for x in a0 if x in a1]
+    other = [x for x in corners if x not in shared]
+    resplit[quad[0]] = [other[0], shared[0], other[1]]
+    resplit[quad[1]] = [other[1], shared[1], other[0]]
+    resplit_mesh = trimesh.Trimesh(m.vertices, resplit, process=False)
+    resplit_mesh.fix_normals()
+    check("digest ignores how a face is split into triangles",
+          compare.audit(stl("resplit", resplit_mesh))["digest"] == d0)
+    unchanged = []
+    for i in range(len(m.vertices)):
+        moved = m.vertices.copy()
+        moved[i, 0] += 1e-4
+        if compare.audit(stl("moved", trimesh.Trimesh(moved, m.faces, process=False)))["digest"] == d0:
+            unchanged.append(i)
+    check("digest changes when any one vertex moves 0.0001 mm", not unchanged)
+
+
+def test_3mf():
+    TMP.mkdir(parents=True, exist_ok=True)
+    def model(coords):
+        verts = "".join(f'<vertex x="{x}" y="{y}" z="{z}"/>' for x, y, z in coords)
+        return f'<model><mesh><vertices>{verts}</vertices><triangles></triangles></mesh></model>'
+    for name, coords, groups in (("apart", [(0, 0, 0), (1, 0, 0)], 0),
+                                 ("together", [(0, 0, 0), (1, 0, 0), (0, 0, 0)], 1)):
+        path = TMP / f"{name}.3mf"
+        with zipfile.ZipFile(path, "w") as z:
+            z.writestr("3D/3dmodel.model", model(coords))
+        check(f"3MF coincident vertices counted ({name})", export_check.coincident_3mf(path) == groups)
 
 
 def test_soundness_and_coverage():
@@ -111,6 +188,16 @@ def test_soundness_and_coverage():
     check("changed digest fails", regress.sound_failures("n", a, dict(a, digest="0")))
     check("a configuration absent from the baseline fails", regress.sound_failures("n", a, "absent"))
     check("relocking ignores the baseline", not regress.sound_failures("n", a, None))
+    check("a volume change with the same vertices fails",
+          regress.sound_failures("n", a, dict(a, volume=a["volume"] + regress.SOUND_VOL + 1e-6)))
+    check("a volume change within the tolerance passes",
+          not regress.sound_failures("n", a, dict(a, volume=a["volume"] + regress.SOUND_VOL)))
+    m0 = dict.fromkeys(regress.DRIFT, 0.0)
+    old = dict(models={"K": m0}, soundness={"n": dict(a)})
+    check("a relock with nothing changed lists nothing", not regress.relock_changes({"K": m0}, {"n": a}, old))
+    check("a relock lists reference drift",
+          regress.relock_changes({"K": dict(m0, mx=regress.DRIFT["mx"] + 1e-6)}, {"n": a}, old))
+    check("a relock lists a changed shape", regress.relock_changes({"K": m0}, {"n": dict(a, digest="0")}, old))
     check("an unsound configuration fails even when relocking", regress.sound_failures("n", dict(a, bodies=2), None))
     full = dict(models=dict.fromkeys(EXPECTED, {}), soundness={"s": {}})
     check("full coverage passes", not regress.coverage_failures([], full, False, False, ["s"]))
@@ -125,7 +212,7 @@ def test_soundness_and_coverage():
 
 
 def main():
-    for test in (test_limits, test_messages, test_audit, test_soundness_and_coverage):
+    for test in (test_limits, test_messages, test_measure, test_audit, test_3mf, test_soundness_and_coverage):
         test()
     bad = [name for name, ok in results if not ok]
     for name, ok in results:

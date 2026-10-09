@@ -43,11 +43,16 @@ slab = 0.001;
 arc_fn = 32;                     // facets on the small pocket arcs (chord error 0.011 mm)
 
 U  = 50;
-// Shells are built from 25 mm and 50 mm cells, so each size is rounded to the
-// nearest half LU (a size typed in off the 0.5 step would otherwise misplace
-// the base) and held to the slider's range.
+// Shells are built from 25 mm and 50 mm cells, so a size typed in off the
+// 0.5 step is rounded up to the next half LU (left as typed, it would misplace
+// the base). Rounding up keeps a drawer made with the same numbers, which the
+// drawer generator builds at the typed size, small enough to fit. Sizes are
+// also held to the slider's range.
 max_lu = 12;
-function half_lu(v, lo) = min(max_lu, max(lo, round(2 * v) / 2));
+for (v = [["width_lu", width_lu], ["height_lu", height_lu], ["depth_lu", depth_lu]])
+    assert(is_num(v[1]), str(v[0], " must be a number, not ", v[1]));
+// (a size that is not a number stops the render at the assert above)
+function half_lu(v, lo) = is_num(v) ? min(max_lu, max(lo, ceil(2 * v - 1e-6) / 2)) : lo;
 NX = half_lu(width_lu, 1);
 NY = half_lu(height_lu, 0.5);
 NZ = half_lu(depth_lu, 1);
@@ -55,7 +60,7 @@ for (v = [["width_lu", width_lu, NX, 1], ["height_lu", height_lu, NY, 0.5], ["de
     if (v[1] != v[2])
         echo(str("NOTE: ", v[0], " = ", v[1],
                  v[1] < v[3] ? " is below the minimum" : v[1] > max_lu ? " is above the maximum"
-                             : " is not on the half-LU grid",
+                             : " is not on the half-LU grid, so it is rounded up",
                  "; using ", v[2], "."));
 
 X0 = -U/2;  X1 = U*NX - U/2;     // outer faces
@@ -128,6 +133,11 @@ cols = concat([for (i = [0:1:nxf - 1]) [U * i, U]], NX - nxf > eps ? [[U * nxf -
 rows = concat([for (j = [0:1:nyf - 1]) [U * j, U]], NY - nyf > eps ? [[U * nyf - U/4, U/2]] : []);
 nx_cells = len(cols);
 ny_cells = len(rows);
+// a side shorter than 1 LU has no whole cell, so no rail channel: every wall
+// kind builds the same wall there
+if (nyf == 0)
+    for (w = [["left_wall", left_wall], ["right_wall", right_wall]]) if (w[1] != "simple")
+        echo(str("NOTE: ", w[0], " = ", w[1], " has no effect: the side is shorter than 1 LU, so it has no rail channel."));
 // positions of the seams between neighbouring cells along each axis
 function seams(cells) = [for (k = [0:1:len(cells) - 2]) cells[k][0] + cells[k][1] / 2];
 // half length of the flat part of a pad side, for a cell of width w
@@ -632,28 +642,36 @@ module pads()
         for (i = [0:nx_cells - 1], j = [0:ny_cells - 1]) {
             c = cols[i];
             r = rows[j];
-            translate([c[0], r[0], 0])
-                if (c[1] == U && r[1] == U)
-                    pad_variant([j == ny_cells - 1, i == 0, j == 0, i == nx_cells - 1]);
-                else
-                    half_pad(c[1], r[1], [j == ny_cells - 1, i == 0, j == 0, i == nx_cells - 1]);
+            outward = [j == ny_cells - 1, i == 0, j == 0, i == nx_cells - 1];
+            if (c[1] == U && r[1] == U)
+                translate([c[0], r[0], 0]) pad_variant(outward);
+            else
+                half_pad(c[0], r[0], c[1], r[1], outward);
         }
         channels_low();
     }
 
-// A pad on a half-LU cell, wx by wy, with outward listing which sides face the
-// outside of the shell (order +y, -x, -y, +x, as for pad_variant). It has the
+// A pad on a half-LU cell centred at (cx, cy), wx by wy, with outward listing
+// which sides face the outside of the shell (order +y, -x, -y, +x, as for
+// pad_variant). Its outline is built in place rather than moved there, so its
+// corner faces at a shell corner come from the same numbers as the floor's and
+// coincide with them exactly. It has the
 // threaded holes on the 25 mm grid; a corner clip pocket at each corner, placed
 // as at a whole pad's corners; and, on each 50 mm side, the edge notch and,
 // facing outward, the side clip pockets. A whole pad's central pocket does not
 // fit, nor do a notch or side pockets on a 25 mm side, whose flat part is
 // narrower than the notch.
-module half_pad(wx, wy, outward)
+module half_pad(cx, cy, wx, wy, outward)
     difference() {
         intersection() {
-            cell_pad(0, 0, wx, wy);
-            translate([-U, -U, -1]) cube([2 * U, 2 * U, floor_z + 1]);
+            cell_pad(cx, cy, wx, wy);
+            translate([cx - U, cy - U, -1]) cube([2 * U, 2 * U, floor_z + 1]);
         }
+        translate([cx, cy, 0]) half_pad_cuts(wx, wy, outward);
+    }
+
+// the holes, notches and pockets of a half pad centred at the origin
+module half_pad_cuts(wx, wy, outward) {
         for (dx = wx == U ? [-12.5, 12.5] : [0], dy = wy == U ? [-12.5, 12.5] : [0])
             translate([dx, dy, 0]) threaded_hole();
         for (k = [0:3]) {
@@ -671,7 +689,7 @@ module half_pad(wx, wy, outward)
         for (k = [0:3]) let (sg = [[1, 1], [-1, 1], [-1, -1], [1, -1]][k])
             translate([sg[0] * (wx - U) / 2, sg[1] * (wy - U) / 2, 0]) rotate([0, 0, 90 * k])
                 corner_pocket();
-    }
+}
 
 // ------------------------------------------------------------------ holes
 
@@ -679,15 +697,19 @@ module half_pad(wx, wy, outward)
 module threaded_hole() {
     intersection() {
         union() {
-            rotate([0, 0, 180 / thr_steps]) translate([0, 0, -1])
+            rotate([0, 0, 90 / thr_steps]) translate([0, 0, -1])
                 cylinder(r = thr_r0 / cos(180 / thr_steps), h = hole_top + 1, $fn = thr_steps);
             thread_ridge(-thr_p, 3);
         }
         translate([-5, -5, -1]) cube([10, 10, hole_top + 1]);
     }
-    // 45-degree entry cone
-    translate([0, 0, -1]) cylinder(r1 = hole_cone + 1, r2 = thr_r0 - 0.01,
-                                   h = 1 + hole_cone - thr_r0 + 0.01, $fn = thr_steps);
+    // 45-degree entry cone, faceted like the core cylinder (same turn, faces
+    // touching the true surface) and ending exactly at the core's polygon, so
+    // the two share that ring of points instead of crossing next to it, which
+    // left the 3MF export pairs of separate vertices at one position
+    rotate([0, 0, 180 / thr_steps]) translate([0, 0, -1])
+        cylinder(r1 = (hole_cone + 1) / cos(180 / thr_steps), r2 = thr_r0 / cos(180 / thr_steps),
+                 h = 1 + hole_cone - thr_r0, $fn = thr_steps);
 }
 
 // the groove of an internal thread as a helical bar with a trapezoid section,
@@ -721,7 +743,9 @@ module walls_part()
             outer_body();
             intersection() {
                 base_envelope();
-                translate([X0 - 1, Y0 - 1, floor_z]) cube([X1 - X0 + 2, Y1 - Y0 + 2, foot_z - floor_z + eps]);
+                // reaching one slab into the floor, where both have the same section,
+                // so the two parts overlap instead of only touching at the floor top
+                translate([X0 - 1, Y0 - 1, floor_z - slab]) cube([X1 - X0 + 2, Y1 - Y0 + 2, foot_z - floor_z + slab + eps]);
             }
         }
         cavity();

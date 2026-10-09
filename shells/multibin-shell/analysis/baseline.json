@@ -2,369 +2,397 @@
   "models": {
     "T111": {
       "bbox": 0.0,
-      "vol": 0.01414019228563909,
-      "p99": 0.010876045239754238,
+      "vol": 0.010940662464828296,
+      "p99": 0.010723653756492807,
       "mx": 0.018792130089052846,
-      "render_s": 15.3,
+      "render_s": 15.4,
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721584254816503e-08
+      "crossing_depth": 0.0
     },
     "T212": {
       "bbox": 0.0,
-      "vol": 0.010806412430263266,
-      "p99": 0.010476716940971005,
+      "vol": 0.008597160699032678,
+      "p99": 0.009999752044677734,
       "mx": 0.018793962319198193,
-      "render_s": 28.9,
+      "render_s": 28.3,
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721584254816503e-08
+      "crossing_depth": 0.0
     },
     "T313": {
       "bbox": 0.0,
-      "vol": 0.009288228342090704,
-      "p99": 0.009999752044677734,
+      "vol": 0.0075976893810875915,
+      "p99": 0.009912368129078324,
       "mx": 0.018793962319198193,
-      "render_s": 45.7,
+      "render_s": 45.8,
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721584254816503e-08
+      "crossing_depth": -0.0
     },
     "T3135": {
       "bbox": 0.0,
-      "vol": 0.008629023669465927,
-      "p99": 0.009700849295978134,
+      "vol": 0.00713960656071997,
+      "p99": 0.008870514104095489,
       "mx": 0.018793962319198193,
-      "render_s": 50.2,
+      "render_s": 50.0,
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721584254816503e-08
+      "crossing_depth": -0.0
     },
     "T323": {
       "bbox": 0.0,
-      "vol": 0.011190555115846873,
-      "p99": 0.010505488272681236,
+      "vol": 0.008826277419173993,
+      "p99": 0.01041191628066414,
       "mx": 0.018793962319198193,
-      "render_s": 73.6,
+      "render_s": 74.2,
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721788479615426e-08
+      "crossing_depth": 0.0
     },
     "T1215": {
       "bbox": 0.0,
-      "vol": 0.012559375306114347,
-      "p99": 0.010697519320038616,
+      "vol": 0.009836249005802461,
+      "p99": 0.010256360476749866,
       "mx": 0.018792130089052846,
-      "render_s": 26.8,
+      "render_s": 26.6,
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721788479615426e-08
+      "crossing_depth": 0.0
     },
     "O111": {
       "bbox": 0.0,
-      "vol": 0.01595596026049777,
-      "p99": 0.011776275285900525,
+      "vol": 0.012654418013710263,
+      "p99": 0.011625925232655614,
       "mx": 0.018792130089052846,
-      "render_s": 15.3,
+      "render_s": 15.4,
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721584254816503e-08
+      "crossing_depth": 0.0
     },
     "O212": {
       "bbox": 0.0,
-      "vol": 0.011678225118502668,
-      "p99": 0.011202577984392668,
+      "vol": 0.009433047644774574,
+      "p99": 0.010808337289886975,
       "mx": 0.018793962319198193,
-      "render_s": 29.2,
+      "render_s": 28.7,
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721584254816503e-08
+      "crossing_depth": 0.0
     },
     "O323": {
       "bbox": 0.0,
-      "vol": 0.011709048391363953,
-      "p99": 0.010643328052982789,
+      "vol": 0.00932206273438623,
+      "p99": 0.010509952867262869,
       "mx": 0.018793962319198193,
-      "render_s": 76.5,
+      "render_s": 74.5,
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721788479615426e-08
+      "crossing_depth": 0.0
     },
     "O1215": {
       "bbox": 0.0,
-      "vol": 0.01367339078584758,
-      "p99": 0.01093063052707309,
+      "vol": 0.010895475269971991,
+      "p99": 0.010717002949229351,
       "mx": 0.018792130089052846,
-      "render_s": 27.1,
+      "render_s": 27.2,
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721788479615426e-08
+      "crossing_depth": 0.0
     },
     "S111": {
       "bbox": 0.0,
-      "vol": 0.008688259812460195,
-      "p99": 0.009999752044677734,
+      "vol": 0.006101917948917194,
+      "p99": 0.009756457880615183,
       "mx": 0.018792130089052846,
       "render_s": 11.9,
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721584254816503e-08
+      "crossing_depth": 0.0
     },
     "S212": {
       "bbox": 0.0,
-      "vol": 0.005303244147182051,
-      "p99": 0.007795102257270146,
+      "vol": 0.0035577989783184003,
+      "p99": 0.007061790183113398,
       "mx": 0.018793962319198193,
-      "render_s": 20.5,
+      "render_s": 20.4,
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721584254816503e-08
+      "crossing_depth": 0.0
     },
     "S323": {
       "bbox": 0.0,
-      "vol": 0.005934317341248384,
-      "p99": 0.008156464866841519,
+      "vol": 0.004032190644275964,
+      "p99": 0.007453552050312646,
       "mx": 0.018793962319198193,
-      "render_s": 53.7,
+      "render_s": 53.5,
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721788479615426e-08
+      "crossing_depth": 0.0
     },
     "S1215": {
       "bbox": 0.0,
-      "vol": 0.00722456095533522,
-      "p99": 0.009231737699316343,
+      "vol": 0.005027736811715076,
+      "p99": 0.00886838463061173,
       "mx": 0.018792130089052846,
       "render_s": 20.0,
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721788479615426e-08
+      "crossing_depth": 0.0
     }
   },
   "soundness": {
     "half_w_1.5x1x1": {
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721584254816503e-08,
+      "crossing_depth": -0.0,
       "extents": [
         75.0,
         50.0,
         55.0
       ],
-      "volume": 37056.189,
-      "digest": "2424b9378b29bf453ef563f133b9b06036f5a6149f6f4010d4f7eed87afdca4e"
+      "volume": 37054.967,
+      "digest": "dd7a560d0084b9956a49b51eff17e3e0a98fd4bc9dfa53cddb6b1998b75a4050"
     },
     "offstep_1.3x1.1x0.8": {
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721584254816503e-08,
+      "crossing_depth": 0.0,
       "extents": [
         75.0,
-        50.0,
+        75.0,
         55.0
       ],
-      "volume": 37056.189,
-      "digest": "2424b9378b29bf453ef563f133b9b06036f5a6149f6f4010d4f7eed87afdca4e"
+      "volume": 50265.374,
+      "digest": "763c192dd23e2c5c8ed8d7745716d9e6e8c2c982efa5a9f6ef8b8f68c35013b6"
     },
     "half_h_2x1.5x2": {
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721788479615426e-08,
+      "crossing_depth": -0.0,
       "extents": [
         100.0,
         75.0,
         105.0
       ],
-      "volume": 97275.493,
-      "digest": "bbb0271f1d2d74dd5813cfa063dd40ccbc8f508539a3ae29781c507d15d016b1"
+      "volume": 97273.049,
+      "digest": "d7f0a063f97d737274ee7599a3160e00498e272db777e361771eb05ff338becd"
     },
     "half_both_2.5x1.5x1.5": {
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721788479615426e-08,
+      "crossing_depth": 0.0,
       "extents": [
         125.0,
         75.0,
         80.0
       ],
-      "volume": 96544.382,
-      "digest": "b953cbfdb8004dfbda7e00ede0b58654832e224854627dc3eef268e438e3a091"
+      "volume": 96541.331,
+      "digest": "eea6305054deac3850e08be8bf9e94c7807cf1b64c5861b08f7438788076217e"
     },
     "thin_1.5x0.5x1": {
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721584254816503e-08,
+      "crossing_depth": -0.0,
       "extents": [
         75.0,
         25.0,
         55.0
       ],
-      "volume": 25270.209,
-      "digest": "9779e924596861f5fc91275fb2bee24ca897b625b8516024669644149695427a"
+      "volume": 25269.6,
+      "digest": "215ef5e6ec3c0fe5f6af11c3b2f9f6edb74de0a7e4e317dd70c189042ea92a79"
     },
     "deep_1x1x4": {
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721584254816503e-08,
+      "crossing_depth": -0.0,
       "extents": [
         50.0,
         50.0,
         205.0
       ],
-      "volume": 75300.471,
-      "digest": "c8713180d4a5bb3fc9f252894a492c44412d40e9c701701b7dea6da3fe94edf0"
+      "volume": 75299.654,
+      "digest": "21cfd97f89bdda47268a807143fa46704d9eec532f1d6db48f5a6bb8dca71df6"
     },
     "wide_4x1x1": {
       "watertight": true,
-      "bodies": 1,
-      "bad_edges": 0,
-      "dup_faces": 0,
-      "crossing_depth": 2.7721584254816503e-08,
-      "extents": [
-        200.0,
-        50.0,
-        55.0
-      ],
-      "volume": 87171.491,
-      "digest": "2a26199ad6ba0f65070dbd7414e7643de8fd30073f9acef5ac5280217028605a"
-    },
-    "long_1x7x1": {
-      "watertight": true,
-      "bodies": 1,
-      "bad_edges": 0,
-      "dup_faces": 0,
-      "crossing_depth": 5.394796609394437e-06,
-      "extents": [
-        50.0,
-        350.0,
-        55.0
-      ],
-      "volume": 148804.871,
-      "digest": "5b2ddf8b29032db8256da1aa3d8b2efd140a6f4e04613093cf66063e2dd80d9c"
-    },
-    "wide_12x1x1": {
-      "watertight": true,
-      "bodies": 1,
-      "bad_edges": 0,
-      "dup_faces": 0,
-      "crossing_depth": 5.394796609394437e-06,
-      "extents": [
-        600.0,
-        50.0,
-        55.0
-      ],
-      "volume": 251527.174,
-      "digest": "f8572758e6208c9cd2065d9d4ac0001b2cdda0ec13c637c516d71c6a820367ed"
-    },
-    "long_mixed_2.5x7.5x1.5": {
-      "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
       "crossing_depth": 5.3947966093944364e-06,
       "extents": [
+        200.0,
+        50.0,
+        55.0
+      ],
+      "volume": 87168.223,
+      "digest": "5235d2df23d17826dc5e2212d9f5a0f3312bd3703cfe6f4e3ed62f7fdb3494e0"
+    },
+    "long_1x7x1": {
+      "watertight": true,
+      "winding": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "crossing_depth": 1.252606270421075e-05,
+      "extents": [
+        50.0,
+        350.0,
+        55.0
+      ],
+      "volume": 148799.152,
+      "digest": "51305c9324b141ec4cade282f2799df10e792987cea877ef2a4498f0d4be6010"
+    },
+    "wide_12x1x1": {
+      "watertight": true,
+      "winding": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "crossing_depth": 3.0517578125e-05,
+      "extents": [
+        600.0,
+        50.0,
+        55.0
+      ],
+      "volume": 251517.37,
+      "digest": "83235fc2429092015b0ffd658cfb959a93c9a5868033eda925edc46dccf3a29c"
+    },
+    "long_mixed_2.5x7.5x1.5": {
+      "watertight": true,
+      "winding": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "crossing_depth": 1.252606270421075e-05,
+      "extents": [
         125.0,
         375.0,
         80.0
       ],
-      "volume": 353497.685,
-      "digest": "58de3d96316846df2f33b7ac2ffb3fb1f35c2c9ceeb3783c6f8fa926032cd05e"
+      "volume": 353482.397,
+      "digest": "07ee011f209bd50760380fa0ed5c2508f5b37970bab6fc2910dada8c63b58877"
     },
     "mixed_walls_2x2x1": {
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721788479615426e-08,
+      "crossing_depth": 0.0,
       "extents": [
         100.0,
         100.0,
         55.0
       ],
-      "volume": 78870.257,
-      "digest": "d2254b5b1f5c2db85ea2350250d47c6dd642bd6066b0e3c7b97e80aba2cf1000"
+      "volume": 78866.989,
+      "digest": "dc59d9607a4e95a639850ad1e1672205c76b0552cb60ea6d6650f0ec400b068e"
     },
     "simple_2x1x2": {
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721584254816503e-08,
+      "crossing_depth": 0.0,
       "extents": [
         100.0,
         50.0,
         105.0
       ],
-      "volume": 93618.509,
-      "digest": "e7572973cb6a6bf01b51bdc2cd2e5f2f935dbea27297b9de155f9493586af5b1"
+      "volume": 93616.875,
+      "digest": "b473ab9acdd046cd58aa8c50eb6c73fb37d124ef696774cf38bfe5e555c75503"
     },
     "topless_half_2.5x1.5x1.5": {
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721788479615426e-08,
+      "crossing_depth": 0.0,
       "extents": [
         125.0,
         75.0,
         80.0
       ],
-      "volume": 95361.425,
-      "digest": "7e67d186537be43aed4ff1e417f0b31774a2c5355ddb3e6bf0a9f3b7f427fde6"
+      "volume": 95358.374,
+      "digest": "ad354f584d6db2e03f403a592c4445e49d08b28da96e15a888426ef77b67002b"
     },
     "simple_half_1.5x2x2.5": {
       "watertight": true,
+      "winding": true,
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 2.7721788479615426e-08,
+      "crossing_depth": 0.0,
       "extents": [
         75.0,
         100.0,
         130.0
       ],
-      "volume": 139832.052,
-      "digest": "ec003552a6491549424fcfce907782d039c6b464274178ff734dd6b581aee446"
+      "volume": 139829.608,
+      "digest": "e3f60ec1a403f7f337403656acb468ea1a06129154a761618b9813d7745e5067"
     }
   }
 }

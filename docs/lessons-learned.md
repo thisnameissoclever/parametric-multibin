@@ -18,6 +18,8 @@ Mistakes and near misses from building the generators, each with its cause, the 
 - [Overlap a loft by exactly its end slab](#overlap-a-loft-by-exactly-its-end-slab)
 - [Test a gate's limits, not only its failures](#test-a-gates-limits-not-only-its-failures)
 - [Measure geometry at full export precision](#measure-geometry-at-full-export-precision)
+- [Prove a lock is repeatable before relying on it](#prove-a-lock-is-repeatable-before-relying-on-it)
+- [Make meeting faces coincide exactly or not at all](#make-meeting-faces-coincide-exactly-or-not-at-all)
 
 ## Random sampling hides edge-shaped deviations
 
@@ -115,9 +117,9 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Cause:** OpenSCAD 2021.01 prints that notice without a `WARNING` prefix.
 
-**Rule:** list the render messages that mean a render is not clean by their content, and fail the regression gate on any of them.
+**Rule:** treat every console line except the renderer's normal statistics as a render message, and fail the regression gate on any message that a configuration does not declare as expected.
 
-**Check:** `render_problems()` in the shell's `analysis/compare.py` matches `nonplanar` as well as `WARNING` and `ERROR`, and `regress.py` fails on any match.
+**Check:** `render_problems()` in the shell's `analysis/compare.py` allows only OpenSCAD 2021.01's statistics lines, and `gate_test.py` checks that a nonplanar notice, a WARNING, an ECHO and an unknown line all count as messages.
 
 ## Apply a cut where its feature is defined
 
@@ -141,7 +143,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 ## Test a gate's limits, not only its failures
 
-**What happened:** the shell's gate passed a version whose half-pad clip pockets had moved 1 mm, because its checks on sizes without a reference compared only bounding box and volume. Its self-test could not have noticed a loosened tolerance either: the known-bad fixture's faults were hundreds of times over every limit.
+**What happened:** the shell's gate passed a version whose half-pad clip pockets had moved 1 mm, because its checks on sizes without a reference compared only bounding box and volume. Its self-test could not have noticed a loosened tolerance either: the known-bad fixture's faults were two to fourteen times over the limits they tripped, so a tolerance loosened that far would still have passed.
 
 **Cause:** the gate was proven only end to end, against one fixture with large faults, and its locked values were proxies for the shape rather than the shape.
 
@@ -158,3 +160,23 @@ Mistakes and near misses from building the generators, each with its cause, the 
 **Rule:** render for measurement with `--export-format binstl`, which keeps 32-bit coordinates, and set geometric limits above that format's rounding at the largest size the generator makes.
 
 **Check:** `EXPORT_FORMAT` in the shell's `analysis/compare.py` is used by every render in the harness, and `gate_test.py` checks it.
+
+## Prove a lock is repeatable before relying on it
+
+**What happened:** the shell's gate locked a digest of each test shape's triangles, after one check that two renders of one size matched. A reviewer then found that the gate failed the unchanged generator: for other sizes, OpenSCAD 2021.01 splits some flat faces into triangles differently from run to run, while writing the same vertices and the same volume.
+
+**Cause:** repeatability was assumed from one example instead of measured across the configurations the lock covers.
+
+**Rule:** before locking a value, render several configurations more than once and confirm the value repeats; lock only what repeats, here the sorted vertices and the volume.
+
+**Check:** `gate_test.py` checks that the digest ignores how a face is split into triangles and changes when any one vertex moves 0.0001 mm.
+
+## Make meeting faces coincide exactly or not at all
+
+**What happened:** a reviewer found that the shell's 3MF export, which stores each vertex once, wrote separate vertices at identical coordinates: about eleven pairs at every threaded hole, and one at an outer corner of half-LU shells. A program that merges vertices by position would fold the mesh there. The STL export hid the problem, because its rounding merged the points.
+
+**Cause:** faces that should meet were built a hair apart. The holes' entry cones, threads and core cylinders were faceted at the same 32 angles, so their edges crossed at nearly the same points; and a half pad's corner face, built around the pad's own centre and then moved, missed the floor's corner face by rounding.
+
+**Rule:** where two faces should meet, build them from the same numbers so they coincide exactly, as when the cone ends on the core's own polygon and a half pad is built in place; where they should not, keep them clearly apart.
+
+**Check:** `regress.py` exports two half-LU sizes as 3MF and fails on any separate vertices at identical coordinates, and `export_check.py` counts them in any 3MF file.

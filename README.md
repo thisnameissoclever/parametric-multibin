@@ -42,7 +42,7 @@ Each part folder holds three records: `REVERSE-ENGINEERING.md` for the measured 
 
 The tools need MultiBuild's original STL files, which this repository does not include because MultiBuild's license forbids redistributing them. Download them from [multibuild.io](https://multibuild.io) first.
 
-1. Install OpenSCAD 2021.01 or later, and Python 3.12.
+1. Install OpenSCAD 2021.01 and Python 3.12. The shell's regression gate locks OpenSCAD 2021.01's output, including its console lines; another version may fail it until the baseline is relocked.
 2. Copy `local-paths.example.json` to `local-paths.json` and set the folders holding your reference files. Environment variables `OPENSCAD` and `MULTIBIN_REFS_<PART>` override the file.
 3. Create the environment:
 

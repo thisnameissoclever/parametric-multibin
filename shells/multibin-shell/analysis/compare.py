@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-from export_check import crossings, load_exact
+from export_check import crossings, load_exact, zero_area_count
 from refs import EXPECTED, STL_DIR, SIZES, WALLS, available, fname
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools"))
@@ -35,6 +35,8 @@ SCAD = ROOT / "MultiBin Shell - Parametric.scad"
 OUT = mbpaths.out_dir("shell")
 OPENSCAD = mbpaths.OPENSCAD
 N_SAMPLES = 50000
+# the Gate 1 limits (docs/verification-method.md); regress.py uses these too
+LIMITS = dict(bbox=0.02, vol=0.5, p99=0.05, mx=0.2)
 WALL_PARAM = {"T": "topped", "O": "topless", "S": "simple"}
 
 
@@ -85,26 +87,18 @@ CROSSING_LIMIT = 1e-3
 
 
 def zero_area_triangles(stl):
-    """Triangles whose corners lie on one line, as exported. OpenSCAD writes
-    these where it splits an edge to meet a neighbouring face; they keep every
-    edge shared by exactly two faces and do not change the shape."""
-    t = trimesh.load_mesh(stl, process=False).triangles
-    return int((np.linalg.norm(np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]), axis=1) < 1e-9).sum())
+    """Triangles whose corners lie on one line, as exported (see export_check)."""
+    return zero_area_count(*load_exact(stl))
 
 
-def geometry_digest(v, f):
-    """SHA-256 of the triangles as written, independent of their order in the
-    file and of which corner each triangle starts at. Repeat renders of the same
-    generator give the same triangles in a different order, so any change to
-    the digest is a change to the geometry or its triangulation."""
-    tri = v[f]
-    n = len(tri)
-    rots = np.stack([np.roll(tri, -k, axis=1).reshape(n, 9) for k in range(3)], axis=1)
-    # keep the rotation whose first corner is smallest, then sort the triangles
-    pick = np.lexsort((rots[:, :, 2], rots[:, :, 1], rots[:, :, 0]), axis=-1)[:, 0]
-    best = rots[np.arange(n), pick]
-    best = best[np.lexsort(best.T[::-1])]
-    return hashlib.sha256(np.ascontiguousarray(best, dtype="<f8").tobytes()).hexdigest()
+def geometry_digest(v):
+    """SHA-256 of the mesh's vertex coordinates as written, sorted. Repeat
+    renders of one generator write the same vertices, but OpenSCAD 2021.01
+    splits some flat faces into triangles differently from run to run, so the
+    digest leaves out how faces are split; audit's volume and soundness checks
+    cover the faces themselves."""
+    vs = np.unique(np.asarray(v, dtype="<f8"), axis=0)
+    return hashlib.sha256(np.ascontiguousarray(vs).tobytes()).hexdigest()
 
 
 def audit(stl):
@@ -116,16 +110,18 @@ def audit(stl):
     _, counts = np.unique(np.sort(f, axis=1), axis=0, return_counts=True)
     bodies = len(trimesh.graph.connected_components(m.face_adjacency, nodes=np.arange(len(f)), min_len=1))
     _, deepest = crossings(v, f)
-    return dict(watertight=bool(m.is_watertight), bodies=int(bodies),
+    return dict(watertight=bool(m.is_watertight), winding=bool(m.is_winding_consistent), bodies=int(bodies),
                 bad_edges=int((c != 2).sum()), dup_faces=int((counts > 1).sum()),
                 crossing_depth=float(deepest),
                 extents=[round(float(x), 4) for x in m.extents], volume=round(float(m.volume), 3),
-                digest=geometry_digest(v, f))
+                digest=geometry_digest(v))
 
 
 def clean(a):
-    return (a["watertight"] and a["bodies"] == 1 and a["bad_edges"] == 0 and a["dup_faces"] == 0
-            and a["crossing_depth"] <= CROSSING_LIMIT)
+    """Watertight, consistently wound with positive volume, one body, every edge
+    shared by exactly two faces, no duplicated facets, no deep crossings."""
+    return (a["watertight"] and a["winding"] and a["volume"] > 0 and a["bodies"] == 1
+            and a["bad_edges"] == 0 and a["dup_faces"] == 0 and a["crossing_depth"] <= CROSSING_LIMIT)
 
 
 def generate(key, scad=None):
@@ -158,29 +154,49 @@ def clusters(pts, dist, limit, cell=3.0):
     return sorted(best.values(), key=lambda t: -t[1])[:limit]
 
 
+def measure(ref, gen, n_samples=N_SAMPLES):
+    """Gate 1 measures between two meshes, gen moved so the bounding-box minimum
+    corners coincide. Returns (row, spots): row has bbox, vol and, per direction,
+    the sampled mean, p95, p99 and max and the all-vertices max (vmax); spots
+    has each direction's points and distances, for locating the worst ones."""
+    gen = gen.copy()
+    gen.apply_translation(ref.bounds[0] - gen.bounds[0])
+    row = dict(bbox=float(np.abs(ref.extents - gen.extents).max()),
+               vol=float(abs(gen.volume - ref.volume) / ref.volume * 100))
+    spots = {}
+    for a, b, tag in ((ref, gen, "ref->gen"), (gen, ref, "gen->ref")):
+        pts, _ = trimesh.sample.sample_surface(a, n_samples, seed=7)
+        _, dist, _ = trimesh.proximity.closest_point(b, pts)
+        _, vdist, _ = trimesh.proximity.closest_point(b, a.vertices)
+        q = np.quantile(dist, [0.95, 0.99])
+        row[tag] = dict(mean=float(dist.mean()), p95=float(q[0]), p99=float(q[1]), mx=float(dist.max()),
+                        vmax=float(vdist.max()))
+        spots[tag] = (np.vstack([pts, a.vertices]), np.concatenate([dist, vdist]))
+    return row, spots
+
+
+def summary(row):
+    """The four gated numbers: bbox, vol, p99 in the worse direction, and the
+    largest distance from samples or vertices in either direction."""
+    a, b = row["ref->gen"], row["gen->ref"]
+    return dict(bbox=row["bbox"], vol=row["vol"], p99=max(a["p99"], b["p99"]),
+                mx=max(a["mx"], b["mx"], a["vmax"], b["vmax"]))
+
+
 def metrics(key, gen_path, n_clusters=10):
     ref = trimesh.load_mesh(STL_DIR / fname(key))
     gen = trimesh.load_mesh(gen_path)
-    shift = ref.bounds[0] - gen.bounds[0]
-    gen.apply_translation(shift)
-    bbox_d = np.abs(ref.extents - gen.extents).max()
-    vol_d = abs(gen.volume - ref.volume) / ref.volume * 100
-    row = dict(key=key, bbox=bbox_d, vol=vol_d)
+    row, spots = measure(ref, gen)
+    row["key"] = key
     print(f"[{key}] bbox ref={np.round(ref.extents, 3)} gen={np.round(gen.extents, 3)} "
-          f"maxdelta={bbox_d:.4f}  vol ref={ref.volume:.1f} gen={gen.volume:.1f} ({vol_d:.3f}%)")
-    for a, b, tag in ((ref, gen, "ref->gen"), (gen, ref, "gen->ref")):
-        pts, _ = trimesh.sample.sample_surface(a, N_SAMPLES, seed=7)
-        _, dist, _ = trimesh.proximity.closest_point(b, pts)
-        q = np.quantile(dist, [0.95, 0.99])
-        _, vdist, _ = trimesh.proximity.closest_point(b, a.vertices)
-        vmax = float(vdist.max())
-        row[tag] = dict(mean=dist.mean(), p95=q[0], p99=q[1], mx=dist.max(), vmax=vmax)
-        print(f"[{key}] {tag}: mean={dist.mean():.4f} p95={q[0]:.4f} p99={q[1]:.4f} "
-              f"max={dist.max():.4f} all-vertices max={vmax:.4f}")
+          f"maxdelta={row['bbox']:.4f}  vol ref={ref.volume:.1f} gen={gen.volume:.1f} ({row['vol']:.3f}%)")
+    for tag in ("ref->gen", "gen->ref"):
+        r = row[tag]
+        print(f"[{key}] {tag}: mean={r['mean']:.4f} p95={r['p95']:.4f} p99={r['p99']:.4f} "
+              f"max={r['mx']:.4f} all-vertices max={r['vmax']:.4f}")
         if n_clusters:
             # worst spots per height band, in the reference's coordinates
-            allp = np.vstack([pts, a.vertices])
-            alld = np.concatenate([dist, vdist])
+            allp, alld = spots[tag]
             zt = ref.bounds[1][2]
             bands = (("base z<7", -1e9, 7), ("wall", 7, zt - 7), ("rim z>top-7", zt - 7, 1e9))
             for name, z0, z1 in bands:
@@ -206,10 +222,8 @@ def scad_digest():
 def gate(r, problems, sound):
     """PASS only when every limit is met, the mesh is sound and the render
     printed nothing beyond OpenSCAD's normal statistics."""
-    mx = max(r["ref->gen"]["mx"], r["gen->ref"]["mx"], r["ref->gen"]["vmax"], r["gen->ref"]["vmax"])
-    p99 = max(r["ref->gen"]["p99"], r["gen->ref"]["p99"])
-    ok = (r["bbox"] <= 0.02 and r["vol"] <= 0.5 and p99 <= 0.05 and mx <= 0.2
-          and sound[r["key"]] and not problems[r["key"]])
+    s = summary(r)
+    ok = all(s[k] <= LIMITS[k] for k in LIMITS) and sound[r["key"]] and not problems[r["key"]]
     return "PASS" if ok else "FAIL"
 
 
@@ -233,11 +247,16 @@ def report(rows, timings, problems, sound):
         "render, or render to reference) is worse; sampled max is the largest of those distances; and "
         "all-vertices max is the largest distance from any vertex of either mesh to the other.",
         "",
-        "Thresholds (`docs/verification-method.md`): bounding box <= 0.02 mm per axis, volume <= 0.5 %, "
-        "p99 <= 0.05 mm, maximum <= 0.2 mm. The sound column means watertight, one body (counted through "
-        "shared edges), every edge shared by exactly two faces, no duplicated facets, and no two triangles "
-        f"crossing by more than {CROSSING_LIMIT:g} mm. The gate column is PASS only when every limit is met, "
-        "the mesh is sound and the render printed nothing beyond OpenSCAD's normal statistics.",
+        f"Thresholds (`docs/verification-method.md`): bounding box <= {LIMITS['bbox']} mm per axis, volume <= "
+        f"{LIMITS['vol']} %, p99 <= {LIMITS['p99']} mm, maximum <= {LIMITS['mx']} mm. The sound column means "
+        "watertight and consistently wound with positive volume, one body (counted through shared edges), every "
+        "edge shared by exactly two faces, no duplicated facets, and no two triangles that share at most one "
+        f"vertex crossing by more than {CROSSING_LIMIT:g} mm. The gate column is PASS only when every limit is "
+        "met, the mesh is sound and the render printed nothing beyond OpenSCAD's normal statistics.",
+        "",
+        "A feature smaller than the 0.2 mm maximum, such as a 0.2 mm opening chamfer or a 0.1 mm slit, could be "
+        "missing without failing these limits; the regression gate (`analysis/regress.py`) holds every reference "
+        "to its locked worst point within 0.002 mm, which catches that.",
         "",
         "The sampled columns can differ in the fourth decimal between runs, because OpenSCAD does not "
         "write its triangles in a fixed order; the bounding box, volume and all-vertices columns repeat.",
@@ -292,6 +311,9 @@ def main():
             print(f"[{k}] zero-area triangles in the export: {zero_area_triangles(p)}")
         print()
     if "--report" in args:
+        if missing or len(rows) != len(EXPECTED):
+            print("not writing VERIFICATION.md: a reference is missing or failed to render")
+            return 1
         report(rows, timings, problems, sound)
     failed = missing + [k for k in keys if k not in sound] + [r["key"] for r in rows if gate(r, problems, sound) != "PASS"]
     if failed:

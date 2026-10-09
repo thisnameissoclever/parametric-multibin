@@ -16,7 +16,7 @@ This folder holds a parametric OpenSCAD remake of MultiBoard's MultiBin shells w
 
 ## Coordinate and size system
 
-MultiBuild names a shell X x Y x Z in LU (layout units, 50 mm each), and a drawer named W x H x D fits the shell with the same three numbers. The generator's parameters keep the drawer's names: `width_lu` is X, `height_lu` is Y and `depth_lu` is Z.
+MultiBuild names a shell X x Y x Z in LU (layout units, 50 mm each; the Simple Walls files write CU), and a drawer named W x H x D fits the shell with the same three numbers. The generator's parameters keep the drawer's names: `width_lu` is X, `height_lu` is Y and `depth_lu` is Z.
 
 All coordinates here are in the print orientation, in mm: the base is on the build plate and the opening is on top. X is the width, Y runs from the front of the build plate to the back, and Z is up. The first 50 mm cell is centred on the origin, so the outer faces sit at X0 = -25, X1 = 50X - 25, Y0 = -25 and Y1 = 50Y - 25, and the rim is at ZT = 50Z + 5.
 
@@ -89,8 +89,8 @@ MultiBuild publishes each shell with one wall kind on all four sides. Every feat
 Run these from the `analysis` folder with the repository's Python environment, `..\..\..\.venv\Scripts\python.exe`. `docs/verification-method.md` at the repository root defines the gates they serve.
 
 - `compare.py` renders each reference configuration and reports the Gate 1 metrics, exiting 1 when any fails; `--report` rewrites `VERIFICATION.md` and refuses unless every expected reference is present.
-- `regress.py` is the regression gate, with its locked `baseline.json`. `selftest.py` runs it against the known-bad fixture in `fixtures` and checks that each section of the gate reports a failure the fixture is known to cause.
-- `export_check.py` counts the mesh artifacts described in `DEVIATIONS.md` M2.
-- `gate_test.py` tests the gate's decisions at their limits in seconds; `selftest.py` runs it first.
+- `regress.py` is the regression gate, with its locked `baseline.json`; it also exports two half-LU sizes as 3MF and checks them. `selftest.py` runs it against the known-bad fixture in `fixtures` and checks that each section of the gate reports a failure the fixture is known to cause.
+- `export_check.py` counts three of the mesh artifacts described in `DEVIATIONS.md` M2: zero-area triangles, vertices closer together than 0.0001 mm, and crossing triangles.
+- `gate_test.py` tests the gate's decisions at their limits in seconds; `selftest.py` runs it first. `mutation_test.py` breaks the gate one way at a time in a copy and checks that `gate_test.py` notices each break.
 - `worst_points.py` lists the worst vertex deviations with their locations; `wall_depth.py` measures recess depth along a vertical line on a wall.
 - `fingerprint.py` (plane inventory), `section.py` (sections with circle fits), `window.py` (windowed sections), `facemap.py` (ray-cast depth images) and `thread_fit.py` (thread profile fit) were used to take the measurements above.
