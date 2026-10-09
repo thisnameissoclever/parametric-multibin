@@ -48,16 +48,16 @@ SOUND_VOL = 0.01
 W = '"{}"'
 SOUNDNESS = [
     ("half_w_1.5x1x1",     dict(width_lu=1.5, height_lu=1, depth_lu=1)),
-    # typed off the half-LU step: rounds up to 1.5 x 1.5 x 1
-    ("offstep_1.3x1.1x0.8", dict(width_lu=1.3, height_lu=1.1, depth_lu=0.8)),
     ("half_h_2x1.5x2",     dict(width_lu=2, height_lu=1.5, depth_lu=2)),
     ("half_both_2.5x1.5x1.5", dict(width_lu=2.5, height_lu=1.5, depth_lu=1.5)),
     ("thin_1.5x0.5x1",     dict(width_lu=1.5, height_lu=0.5, depth_lu=1)),
     ("deep_1x1x4",         dict(width_lu=1, height_lu=1, depth_lu=4)),
+    ("tall_1x1x12",        dict(width_lu=1, height_lu=1, depth_lu=12)),
     ("wide_4x1x1",         dict(width_lu=4, height_lu=1, depth_lu=1)),
     # pads far from the origin: some positions once exported broken pocket slits
     ("long_1x7x1",         dict(width_lu=1, height_lu=7, depth_lu=1)),
     ("wide_12x1x1",        dict(width_lu=12, height_lu=1, depth_lu=1)),
+    ("long_1x12x1",        dict(width_lu=1, height_lu=12, depth_lu=1)),
     ("long_mixed_2.5x7.5x1.5", dict(width_lu=2.5, height_lu=7.5, depth_lu=1.5,
                                 front_wall=W.format("topped"), back_wall=W.format("topped"),
                                 left_wall=W.format("topless"), right_wall=W.format("simple"))),
@@ -77,15 +77,19 @@ SOUNDNESS = [
                                 left_wall=W.format("simple"), right_wall=W.format("simple"))),
 ]
 
+# sizes the sliders cannot produce: each must stop the render with this error
+REJECTED = [
+    ("offstep_width_1.3", dict(width_lu=1.3), "width_lu must be a multiple of 0.5 from 1 to 12, not 1.3"),
+    ("zero_height", dict(height_lu=0), "height_lu must be a multiple of 0.5 from 0.5 to 12, not 0"),
+    ("deep_12.5", dict(depth_lu=12.5), "depth_lu must be a multiple of 0.5 from 1 to 12, not 12.5"),
+]
+
 # configurations also exported as 3MF, which keeps separate vertices apart by
 # index: none may write two separate vertices at identical coordinates
 THREEMF_CHECK = ["thin_1.5x0.5x1", "half_both_2.5x1.5x1.5"]
 
 # console texts a configuration must print, and may print without failing
 EXPECTED_MESSAGES = {
-    "offstep_1.3x1.1x0.8": ["NOTE: width_lu = 1.3 is not on the half-LU grid, so it is rounded up; using 1.5.",
-                            "NOTE: height_lu = 1.1 is not on the half-LU grid, so it is rounded up; using 1.5.",
-                            "NOTE: depth_lu = 0.8 is below the minimum; using 1."],
     "thin_1.5x0.5x1": ["NOTE: left_wall = topped has no effect: the side is shorter than 1 LU, so it has no rail channel.",
                        "NOTE: right_wall = topped has no effect: the side is shorter than 1 LU, so it has no rail channel."],
 }
@@ -170,40 +174,66 @@ def render(name, params, scad, expected=(), fmt="stl"):
     return (stl if stl.exists() else None), r.stderr[-2000:], problems, seen
 
 
-def main():
-    update = "--update-baseline" in sys.argv
-    accept = "--accept-drift" in sys.argv
-    quick = "--quick" in sys.argv
-    scad = compare.SCAD
-    if "--scad" in sys.argv:
-        scad = Path(sys.argv[sys.argv.index("--scad") + 1]).resolve()
-        if update:
-            print("refusing to lock a baseline from an alternate SCAD")
-            return 2
-        print(f"*** checking ALTERNATE SCAD: {scad.name} ***")
+class Steps:
+    """The gate's contact with the outside world: rendering, measuring and the
+    baseline file. gate_test.py drives run() with fakes in their place, so the
+    way run() combines the decisions is tested as well as the decisions."""
+
+    def missing_refs(self):
+        return [k for k in EXPECTED if not (STL_DIR / fname(k)).is_file()]
+
+    def generate(self, key, scad):
+        return generate(key, scad)
+
+    def measure(self, key, path):
+        return summary(metrics(key, path, 0))
+
+    def audit(self, path):
+        return audit(path)
+
+    def render(self, name, params, scad, expected, fmt="stl"):
+        return render(name, params, scad, expected, fmt)
+
+    def coincident_3mf(self, path):
+        return coincident_3mf(path)
+
+    def load_baseline(self):
+        return json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else None
+
+    def write_baseline(self, data):
+        BASELINE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def run(steps, scad, update=False, accept=False, quick=False, alternate=False, log=print):
+    """One gate run. Returns (exit status, failures); writes the baseline only
+    when relocking with no failures."""
+    if update and alternate:
+        log("refusing to lock a baseline from an alternate SCAD")
+        return 2, []
     if update and quick:
-        print("refusing to lock a baseline without the soundness section")
-        return 2
-    if not update and not BASELINE.exists():
-        print("no baseline; run with --update-baseline first")
-        return 2
-    base = {} if update else json.loads(BASELINE.read_text(encoding="utf-8"))
-    missing = [k for k in EXPECTED if not (STL_DIR / fname(k)).is_file()]
+        log("refusing to lock a baseline without the soundness section")
+        return 2, []
+    old = steps.load_baseline()
+    if not update and old is None:
+        log("no baseline; run with --update-baseline first")
+        return 2, []
+    base = {} if update else old
+    missing = steps.missing_refs()
     present = [k for k in EXPECTED if k not in missing]
     failures = coverage_failures(missing, base, update, quick, [n for n, _ in SOUNDNESS])
     current, sound_now = {}, {}
 
-    print("=" * 78)
-    print(f"REFERENCE MATCH ({len(present)} of {len(EXPECTED)} references)")
-    print("=" * 78)
+    log("=" * 78)
+    log(f"REFERENCE MATCH ({len(present)} of {len(EXPECTED)} references)")
+    log("=" * 78)
     for key in present:
-        p, secs, problems = generate(key, scad)
+        p, secs, problems = steps.generate(key, scad)
         failures += message_failures(key, problems, (), ())
         if p is None:
             failures.append(f"{key}: render failed")
             continue
-        m = summary(metrics(key, p, 0))
-        a = audit(p)
+        m = steps.measure(key, p)
+        a = steps.audit(p)
         m.update(render_s=round(secs, 1),
                  **{k: a[k] for k in ("watertight", "winding", "bodies", "bad_edges", "dup_faces", "crossing_depth")})
         current[key] = m
@@ -213,68 +243,85 @@ def main():
         was = base.get("models", {}).get(key)
         if was:
             failures += drift_failures(key, m, was)
-            print(f"{key:6} " + "  ".join(f"{f}={m[f]:.4f}({m[f] - was[f]:+.4f})" for f in DRIFT))
+            log(f"{key:6} " + "  ".join(f"{f}={m[f]:.4f}({m[f] - was[f]:+.4f})" for f in DRIFT))
 
     if not quick:
-        print("=" * 78)
-        print("SOUNDNESS (no reference: mesh soundness and the locked geometry digest)")
-        print("=" * 78)
+        log("=" * 78)
+        log("SOUNDNESS (no reference: mesh soundness, and the locked vertex digest and volume)")
+        log("=" * 78)
         golden = base.get("soundness", {})
         for name, params in SOUNDNESS:
             expected = EXPECTED_MESSAGES.get(name, [])
-            stl, err, problems, seen = render(name, params, scad, expected)
+            stl, err, problems, seen = steps.render(name, params, scad, expected)
             failures += message_failures(f"soundness/{name}", problems, expected, seen)
             if stl is None:
                 failures.append(f"soundness/{name}: render failed")
-                print(f"  {name:24} RENDER FAILED\n{err}")
+                log(f"  {name:24} RENDER FAILED")
+                log(err)
                 continue
-            a = audit(stl)
+            a = steps.audit(stl)
             sound_now[name] = a
             found = sound_failures(name, a, None if update else golden.get(name, "absent"))
             failures += found
             state = "ok" if not found else "CHANGED" if clean(a) else "BROKEN"
-            print(f"  {name:24} {state:7} bbox={a['extents']} vol={a['volume']}")
+            log(f"  {name:24} {state:7} bbox={a['extents']} vol={a['volume']}")
             if name in THREEMF_CHECK:
-                tmf, err, problems, seen = render(name, params, scad, expected, fmt="3mf")
+                tmf, err, problems, seen = steps.render(name, params, scad, expected, fmt="3mf")
                 failures += message_failures(f"soundness/{name} 3MF", problems, expected, seen)
-                groups = coincident_3mf(tmf) if tmf else None
+                groups = steps.coincident_3mf(tmf) if tmf else None
                 if groups is None:
                     failures.append(f"soundness/{name}: 3MF render failed")
                 elif groups:
                     failures.append(f"soundness/{name}: 3MF has {groups} group(s) of separate vertices at identical coordinates")
-                print(f"  {name:24} 3MF     coincident vertex groups: {groups}")
+                log(f"  {name:24} 3MF     coincident vertex groups: {groups}")
+
+    if not quick:
+        for name, params, error in REJECTED:
+            stl, err, _, _ = steps.render(name, params, scad, [error])
+            if stl is not None or error not in err:
+                failures.append(f"rejected/{name}: expected the render to stop with: {error}")
+            log(f"  {name:24} {'rejected' if stl is None and error in err else 'NOT REJECTED'}")
 
     if update:
         # a relock must not quietly accept a regression: list what it would
         # change, and require --accept-drift once the change is known to be intended
-        old = json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {}
-        changes = relock_changes(current, sound_now, old)
+        changes = relock_changes(current, sound_now, old or {})
         if changes and not accept:
             failures += changes + ["relock would accept the changes above; rerun with --accept-drift if they are intended"]
         elif changes:
-            print(f"accepting {len(changes)} change(s) against the old baseline:")
+            log(f"accepting {len(changes)} change(s) against the old baseline:")
             for f in changes:
-                print(f"  - {f}")
+                log(f"  - {f}")
         # a baseline locked over a failure would hide it from every later run
         if failures:
-            print(f"NOT RELOCKED - {len(failures)} problem(s):")
+            log(f"NOT RELOCKED - {len(failures)} problem(s):")
             for f in failures:
-                print(f"  - {f}")
-            return 1
-        BASELINE.write_text(json.dumps(dict(models=current, soundness=sound_now), indent=2), encoding="utf-8")
-        print(f"baseline relocked: {len(current)} reference(s), {len(sound_now)} soundness config(s)")
-        return 0
+                log(f"  - {f}")
+            return 1, failures
+        steps.write_baseline(dict(models=current, soundness=sound_now))
+        log(f"baseline relocked: {len(current)} reference(s), {len(sound_now)} soundness config(s)")
+        return 0, failures
 
-    print("=" * 78)
+    log("=" * 78)
     if failures:
-        print(f"FAIL - {len(failures)} problem(s):")
+        log(f"FAIL - {len(failures)} problem(s):")
         for f in failures:
-            print(f"  - {f}")
-        return 1
-    print(f"PASS - all {len(EXPECTED)} references match"
-          + (" (soundness section skipped)" if quick
-             else ", and every soundness configuration is sound and unchanged") + ".")
-    return 0
+            log(f"  - {f}")
+        return 1, failures
+    log(f"PASS - all {len(EXPECTED)} references match"
+        + (" (soundness section skipped)" if quick
+           else ", and every soundness configuration is sound and unchanged") + ".")
+    return 0, failures
+
+
+def main():
+    scad, alternate = compare.SCAD, "--scad" in sys.argv
+    if alternate:
+        scad = Path(sys.argv[sys.argv.index("--scad") + 1]).resolve()
+        print(f"*** checking ALTERNATE SCAD: {scad.name} ***")
+    code, _ = run(Steps(), scad, update="--update-baseline" in sys.argv, accept="--accept-drift" in sys.argv,
+                  quick="--quick" in sys.argv, alternate=alternate)
+    return code
 
 
 if __name__ == "__main__":

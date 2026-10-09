@@ -1,8 +1,8 @@
 # VERIFICATION - shell Gate 1 mechanical match
 
-Harness: `analysis/compare.py`, run 2026-10-09 17:54 UTC, 50000 surface samples per direction per model, bounding-box aligned, plus a sweep of every vertex in both directions.
+Harness: `analysis/compare.py`, run 2026-10-09 19:55 UTC, 50000 surface samples per direction per model, bounding-box aligned, plus a sweep of every vertex in both directions.
 
-File verified: `MultiBin Shell - Parametric.scad`, SHA-256 084192F7561A4FC445B059B29CC19EF72D3A1AC042B3BBDB218D01F718D45D5E, computed with LF line endings as git stores the file (`git show <commit>:"shells/multibin-shell/MultiBin Shell - Parametric.scad" | sha256sum`).
+File verified: `MultiBin Shell - Parametric.scad`, SHA-256 A836F34329E62014119E38AA8FAD727232498B25E7D218E073CBEDDFC4013AA5, computed with LF line endings as git stores the file (`git show <commit>:"shells/multibin-shell/MultiBin Shell - Parametric.scad" | sha256sum`).
 
 Renderer: OpenSCAD version 2021.01.
 
@@ -16,19 +16,19 @@ The sampled columns can differ in the fourth decimal between runs, because OpenS
 
 | model | bbox dmax (mm) | vol delta (%) | p99 (worse dir) | sampled max | all-vertices max | sound | render (s) | gate |
 |---|---|---|---|---|---|---|---|---|
-| T111 | 0.0000 | 0.011 | 0.0107 | 0.0170 | 0.0188 | yes | 16 | PASS |
-| T212 | 0.0000 | 0.009 | 0.0100 | 0.0170 | 0.0188 | yes | 29 | PASS |
-| T313 | 0.0000 | 0.008 | 0.0099 | 0.0168 | 0.0188 | yes | 46 | PASS |
-| T3135 | 0.0000 | 0.007 | 0.0089 | 0.0173 | 0.0188 | yes | 51 | PASS |
-| T323 | 0.0000 | 0.009 | 0.0104 | 0.0171 | 0.0188 | yes | 74 | PASS |
-| T1215 | 0.0000 | 0.010 | 0.0103 | 0.0180 | 0.0188 | yes | 27 | PASS |
-| O111 | 0.0000 | 0.013 | 0.0116 | 0.0169 | 0.0188 | yes | 16 | PASS |
-| O212 | 0.0000 | 0.009 | 0.0108 | 0.0168 | 0.0188 | yes | 30 | PASS |
-| O323 | 0.0000 | 0.009 | 0.0105 | 0.0176 | 0.0188 | yes | 77 | PASS |
-| O1215 | 0.0000 | 0.011 | 0.0107 | 0.0170 | 0.0188 | yes | 27 | PASS |
-| S111 | 0.0000 | 0.006 | 0.0095 | 0.0171 | 0.0188 | yes | 12 | PASS |
-| S212 | 0.0000 | 0.004 | 0.0071 | 0.0179 | 0.0188 | yes | 21 | PASS |
-| S323 | 0.0000 | 0.004 | 0.0074 | 0.0175 | 0.0188 | yes | 54 | PASS |
-| S1215 | 0.0000 | 0.005 | 0.0088 | 0.0177 | 0.0188 | yes | 20 | PASS |
+| T111 | 0.0000 | 0.012 | 0.0107 | 0.0170 | 0.0188 | yes | 16 | PASS |
+| T212 | 0.0000 | 0.009 | 0.0098 | 0.0174 | 0.0188 | yes | 29 | PASS |
+| T313 | 0.0000 | 0.008 | 0.0094 | 0.0173 | 0.0188 | yes | 47 | PASS |
+| T3135 | 0.0000 | 0.007 | 0.0083 | 0.0173 | 0.0188 | yes | 50 | PASS |
+| T323 | 0.0000 | 0.009 | 0.0104 | 0.0171 | 0.0188 | yes | 75 | PASS |
+| T1215 | 0.0000 | 0.010 | 0.0103 | 0.0185 | 0.0188 | yes | 27 | PASS |
+| O111 | 0.0000 | 0.013 | 0.0116 | 0.0169 | 0.0188 | yes | 15 | PASS |
+| O212 | 0.0000 | 0.010 | 0.0108 | 0.0168 | 0.0188 | yes | 29 | PASS |
+| O323 | 0.0000 | 0.010 | 0.0105 | 0.0176 | 0.0188 | yes | 76 | PASS |
+| O1215 | 0.0000 | 0.012 | 0.0107 | 0.0170 | 0.0188 | yes | 27 | PASS |
+| S111 | 0.0000 | 0.007 | 0.0091 | 0.0171 | 0.0188 | yes | 12 | PASS |
+| S212 | 0.0000 | 0.004 | 0.0066 | 0.0172 | 0.0188 | yes | 21 | PASS |
+| S323 | 0.0000 | 0.004 | 0.0071 | 0.0182 | 0.0188 | yes | 54 | PASS |
+| S1215 | 0.0000 | 0.006 | 0.0086 | 0.0177 | 0.0188 | yes | 20 | PASS |
 
 Every render printed nothing beyond OpenSCAD's normal statistics.

@@ -107,7 +107,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Cause:** on Windows, Git Bash subshells started with `&` keep running after their parent exits, so the parent's exit says nothing about the runs it started.
 
-**Rule:** start parallel runs from one command that ends with `wait`, and before relaunching, list the running `openscad.exe` and `python.exe` processes to find survivors. To stop one run, match its own `python.exe` command line: the parent `bash.exe` carries the text of every run it started, so matching on that text also stops runs that should continue.
+**Rule:** start parallel runs from one command that ends with `wait`, and before relaunching, list the running `openscad.exe` and `python.exe` processes to find survivors. To stop one run, match its own `python.exe` command line: the parent `bash.exe` carries the text of every run it started, so matching on that text also stops runs that should continue. Never run two jobs side by side that write the same output files, such as `compare.py` and `regress.py` on the same generator; chain them instead.
 
 **Check:** `Get-CimInstance Win32_Process -Filter "Name='openscad.exe'"` lists one process per expected run, each with a different output file.
 

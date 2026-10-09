@@ -90,7 +90,8 @@ def coincident_3mf(path):
     z = zipfile.ZipFile(path)
     model = z.read(next(n for n in z.namelist() if n.endswith(".model"))).decode()
     coords = re.findall(r'<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"', model)
-    return sum(1 for n in Counter(coords).values() if n > 1)
+    # compared as numbers, so "0.000000" and "-0.000000" are the same position
+    return sum(1 for n in Counter(tuple(float(c) + 0.0 for c in v) for v in coords).values() if n > 1)
 
 
 def check(path):

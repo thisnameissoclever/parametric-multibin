@@ -101,3 +101,5 @@ Decided against for now:
 ## Both parts
 
 - **Reference coverage.** Each part's regression gate reports any missing reference file on every run. A restored file makes the gate fail until the baseline is relocked, so it cannot sit outside the drift check unnoticed.
+- **Magnet pockets at half-LU widths.** A magnet drawer's back-wall pockets and the shell's central base pockets share one outline and appear to be magnet partners. At half-LU widths they miss by 12.5 mm: the drawer generator centres its magnet cells, and the shell lays its cells out from the -x end. Placing the drawer's magnet pockets from its -x end, 50 mm apart, would line them up at every width and change nothing at whole widths. Awaiting Tim's decision.
+- **Drawer gate.** The shell's gate gained checks the drawer's gate lacks: failing on a missing reference, a locked vertex digest for sizes without a reference, a relock that refuses unaccepted drift, tests of its whole run, and a mutation check. Port them to the drawer's gate.

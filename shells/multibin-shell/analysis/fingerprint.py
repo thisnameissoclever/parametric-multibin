@@ -15,6 +15,8 @@ from refs import load_tris, normals_areas
 
 
 def main():
+    if len(sys.argv) not in (2, 3):
+        sys.exit(__doc__)
     key = sys.argv[1]
     min_area = float(sys.argv[2]) if len(sys.argv) > 2 else 1.0
     tris = load_tris(key)

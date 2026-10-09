@@ -175,11 +175,110 @@ def test_3mf():
         verts = "".join(f'<vertex x="{x}" y="{y}" z="{z}"/>' for x, y, z in coords)
         return f'<model><mesh><vertices>{verts}</vertices><triangles></triangles></mesh></model>'
     for name, coords, groups in (("apart", [(0, 0, 0), (1, 0, 0)], 0),
-                                 ("together", [(0, 0, 0), (1, 0, 0), (0, 0, 0)], 1)):
+                                 ("together", [(0, 0, 0), (1, 0, 0), (0, 0, 0)], 1),
+                                 ("signed zero", [("0.000000", 0, 0), ("-0.000000", 0, 0)], 1)):
         path = TMP / f"{name}.3mf"
         with zipfile.ZipFile(path, "w") as z:
             z.writestr("3D/3dmodel.model", model(coords))
         check(f"3MF coincident vertices counted ({name})", export_check.coincident_3mf(path) == groups)
+
+
+class FakeSteps:
+    """Stands in for OpenSCAD, the meshes and the baseline file, so run() can be
+    driven through each kind of failure in a fraction of a second."""
+
+    def __init__(self, baseline=None, **faults):
+        self.baseline, self.written = baseline, None
+        self.missing = faults.get("missing", [])
+        self.ref_messages = faults.get("ref_messages", {})
+        self.measure_over = faults.get("measure_over", {})
+        self.audit_over = faults.get("audit_over", {})
+        self.sound_messages = faults.get("sound_messages", {})
+        self.unseen = faults.get("unseen", [])
+        self.unseen_fmt = faults.get("unseen_fmt", "stl")
+        self.threemf = faults.get("threemf", 0)
+        self.rejects = faults.get("rejects", True)
+
+    def missing_refs(self):
+        return list(self.missing)
+
+    def generate(self, key, scad):
+        return f"ref/{key}", 1.0, list(self.ref_messages.get(key, []))
+
+    def measure(self, key, path):
+        return dict(dict.fromkeys(regress.DRIFT, 0.0), **self.measure_over.get(key, {}))
+
+    def audit(self, path):
+        a = dict(watertight=True, winding=True, bodies=1, bad_edges=0, dup_faces=0, crossing_depth=0.0,
+                 extents=[1.0, 1.0, 1.0], volume=1.0, digest=path)
+        return dict(a, **self.audit_over.get(path, {}))
+
+    def render(self, name, params, scad, expected, fmt="stl"):
+        if any(name == r[0] for r in regress.REJECTED):
+            return None, (expected[0] if self.rejects else ""), [], []
+        return f"sound/{name}.{fmt}", "", list(self.sound_messages.get(name, [])),             [e for e in expected if not (fmt == self.unseen_fmt and e in self.unseen)]
+
+    def coincident_3mf(self, path):
+        return self.threemf
+
+    def load_baseline(self):
+        return self.baseline
+
+    def write_baseline(self, data):
+        self.written = data
+
+
+def gate_run(baseline, quiet=True, **kw):
+    faults = {k: kw.pop(k) for k in list(kw) if k not in ("update", "accept", "quick", "alternate")}
+    steps = FakeSteps(baseline, **faults)
+    code, failures = regress.run(steps, "fake.scad", log=(lambda *a: None) if quiet else print, **kw)
+    return code, failures, steps.written
+
+
+def has(failures, text):
+    return any(text in f for f in failures)
+
+
+def test_run():
+    code, failures, locked = gate_run(None, update=True)
+    check("a clean relock writes the baseline", code == 0 and locked is not None
+          and len(locked["models"]) == len(EXPECTED) and len(locked["soundness"]) == len(regress.SOUNDNESS))
+    code, failures, _ = gate_run(locked)
+    check("a clean run passes", code == 0 and not failures)
+    note = regress.EXPECTED_MESSAGES["thin_1.5x0.5x1"][0]
+    for label, kw, text in (
+            ("a missing reference", dict(missing=[EXPECTED[0]]), "reference file missing"),
+            ("an unsound reference", dict(audit_over={f"ref/{EXPECTED[0]}": dict(watertight=False)}),
+             "mesh not a clean single shell"),
+            ("a reference render message", dict(ref_messages={EXPECTED[0]: ["WARNING: x"]}), "render message"),
+            ("a reference over a HARD limit", dict(measure_over={EXPECTED[0]: dict(mx=0.3)}), "HARD mx"),
+            ("reference drift", dict(measure_over={EXPECTED[0]: dict(mx=0.003)}), "DRIFT mx"),
+            ("a missing expected note", dict(unseen=[note]), "expected render message missing"),
+            ("a missing expected note in the 3MF export", dict(unseen=[note], unseen_fmt="3mf"),
+             "3MF: expected render message missing"),
+            ("an unexpected soundness message", dict(sound_messages={"half_w_1.5x1x1": ["ECHO: x"]}), "render message"),
+            ("a changed shape", dict(audit_over={"sound/half_w_1.5x1x1.stl": dict(digest="x")}), "geometry changed"),
+            ("an unsound configuration", dict(audit_over={"sound/half_w_1.5x1x1.stl": dict(bodies=2)}),
+             "mesh not a clean single shell"),
+            ("coincident 3MF vertices", dict(threemf=2), "3MF has 2"),
+            ("a size that is not rejected", dict(rejects=False), "rejected/")):
+        code, failures, _ = gate_run(locked, **kw)
+        check(f"a run fails on {label}", code == 1 and has(failures, text))
+    dropped = dict(locked, soundness=dict(locked["soundness"], extra_config={}))
+    code, failures, _ = gate_run(dropped)
+    check("a run fails when a locked configuration is no longer checked", code == 1 and has(failures, "no longer checked"))
+    drift = dict(measure_over={EXPECTED[0]: dict(mx=0.003)})
+    code, failures, written = gate_run(locked, update=True, **drift)
+    check("a relock refuses drift without --accept-drift", code == 1 and written is None
+          and has(failures, "--accept-drift"))
+    code, failures, written = gate_run(locked, update=True, accept=True, **drift)
+    check("a relock with --accept-drift writes the baseline", code == 0 and written is not None)
+    code, failures, written = gate_run(locked, update=True, accept=True,
+                                       audit_over={f"ref/{EXPECTED[0]}": dict(watertight=False)})
+    check("a relock never writes over a failure", code == 1 and written is None)
+    check("a relock without the soundness section is refused", gate_run(locked, update=True, quick=True)[0] == 2)
+    check("a relock from another SCAD is refused", gate_run(locked, update=True, alternate=True)[0] == 2)
+    check("a run without a baseline stops", gate_run(None)[0] == 2)
 
 
 def test_soundness_and_coverage():
@@ -212,7 +311,8 @@ def test_soundness_and_coverage():
 
 
 def main():
-    for test in (test_limits, test_messages, test_measure, test_audit, test_3mf, test_soundness_and_coverage):
+    for test in (test_limits, test_messages, test_measure, test_audit, test_3mf, test_soundness_and_coverage,
+                 test_run):
         test()
     bad = [name for name, ok in results if not ok]
     for name, ok in results:

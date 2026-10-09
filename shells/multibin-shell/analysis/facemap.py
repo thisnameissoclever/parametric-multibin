@@ -5,9 +5,11 @@ KEY may also be a path to any STL file, for mapping a generated mesh.
 FACE is one of -x +x -y +y (the wall's outward direction). SIDE is "out" to
 look at the outer surface from outside, or "in" to look at the inner surface
 from the cavity. Rays run parallel to the face normal on a grid with the given
-step (default 0.1 mm). Brightness encodes how far the surface sits from the
-nominal plane: the gray level is linear over the printed depth range.
-Also prints the distinct depth levels with the area each covers.
+step (default 0.1 mm). Brightness encodes the coordinate, along the face
+normal, where each ray first hits the surface: the gray level is linear over
+that coordinate's range, or over [lo, hi] when given, so whether deeper points
+look darker or lighter depends on which face is mapped. Also prints the
+distinct hit coordinates with the area each covers.
 """
 
 import struct

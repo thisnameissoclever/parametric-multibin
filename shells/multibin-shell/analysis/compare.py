@@ -77,8 +77,8 @@ def render_problems(stderr, expected=()):
 
 # Renders are exported as binary STL, which keeps 32-bit coordinates: about
 # 0.00007 mm at 600 mm, the largest shell. OpenSCAD's default ASCII STL keeps
-# six significant digits, 0.001 mm beyond 100 mm, and that rounding alone can
-# push a vertex 0.003 mm through a neighbouring face on a long shell.
+# six significant digits, 0.001 mm beyond 100 mm, and that rounding alone
+# pushed vertices up to 0.0003 mm through neighbouring faces on 12 LU shells.
 EXPORT_FORMAT = ["--export-format", "binstl"]
 
 # deepest crossing between two triangles that a sound render may have: binary

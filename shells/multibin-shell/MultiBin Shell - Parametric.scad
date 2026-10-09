@@ -43,25 +43,22 @@ slab = 0.001;
 arc_fn = 32;                     // facets on the small pocket arcs (chord error 0.011 mm)
 
 U  = 50;
-// Shells are built from 25 mm and 50 mm cells, so a size typed in off the
-// 0.5 step is rounded up to the next half LU (left as typed, it would misplace
-// the base). Rounding up keeps a drawer made with the same numbers, which the
-// drawer generator builds at the typed size, small enough to fit. Sizes are
-// also held to the slider's range.
+// Shells are built from 25 mm and 50 mm cells, and the drawer generator builds
+// a drawer at whatever size it is given, so the shell accepts only the sizes
+// its sliders offer: half-LU steps within each range. Any other value stops the
+// render with an error, rather than building a shell of a different size from
+// the drawer made with the same numbers.
 max_lu = 12;
-for (v = [["width_lu", width_lu], ["height_lu", height_lu], ["depth_lu", depth_lu]])
-    assert(is_num(v[1]), str(v[0], " must be a number, not ", v[1]));
-// (a size that is not a number stops the render at the assert above)
-function half_lu(v, lo) = is_num(v) ? min(max_lu, max(lo, ceil(2 * v - 1e-6) / 2)) : lo;
+function on_slider(v, lo) = is_num(v) && v >= lo - 1e-6 && v <= max_lu + 1e-6
+                            && abs(2 * v - round(2 * v)) < 1e-6;
+for (v = [["width_lu", width_lu, 1], ["height_lu", height_lu, 0.5], ["depth_lu", depth_lu, 1]])
+    assert(on_slider(v[1], v[2]),
+           str(v[0], " must be a multiple of 0.5 from ", v[2], " to ", max_lu, ", not ", v[1]));
+// (a value the assert above rejects never reaches the geometry)
+function half_lu(v, lo) = on_slider(v, lo) ? round(2 * v) / 2 : lo;
 NX = half_lu(width_lu, 1);
 NY = half_lu(height_lu, 0.5);
 NZ = half_lu(depth_lu, 1);
-for (v = [["width_lu", width_lu, NX, 1], ["height_lu", height_lu, NY, 0.5], ["depth_lu", depth_lu, NZ, 1]])
-    if (v[1] != v[2])
-        echo(str("NOTE: ", v[0], " = ", v[1],
-                 v[1] < v[3] ? " is below the minimum" : v[1] > max_lu ? " is above the maximum"
-                             : " is not on the half-LU grid, so it is rounded up",
-                 "; using ", v[2], "."));
 
 X0 = -U/2;  X1 = U*NX - U/2;     // outer faces
 Y0 = -U/2;  Y1 = U*NY - U/2;
@@ -596,7 +593,7 @@ module central_pocket() {
     // the plate keeps the flared octagon's two top chamfers; its lower corners are square
     translate([0, 0, 3.2 - eps]) linear_extrude(height = 0.2 + eps)
         polygon([[-8.5, -5.1], [8.5, -5.1], [8.5, 3.521], [6.921, 5.1], [-6.921, 5.1], [-8.5, 3.521]]);
-    translate([-5.1, -5.1, 3.4 - eps]) cube([10.2, 10.2, 0.2 + 2 * eps]);
+    translate([-5.1, -5.1, 3.4 - eps]) cube([10.2, 10.2, 0.2 + eps]);    // ends at 3.6, where the octagon takes over
     oct_prism(-5.1, 5.1, -5.1, 5.1, 2.988, 3.6 - eps, 5.2);
 }
 

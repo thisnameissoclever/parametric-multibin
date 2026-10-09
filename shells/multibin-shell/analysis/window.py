@@ -49,6 +49,8 @@ def merge(run, tol=1e-4):
 
 
 def main():
+    if len(sys.argv) != 8:
+        sys.exit(__doc__)
     key, axis, value = sys.argv[1], sys.argv[2].lower(), float(sys.argv[3])
     u0, u1, v0, v1 = (float(a) for a in sys.argv[4:8])
     mesh = trimesh.load_mesh(STL_DIR / fname(key))

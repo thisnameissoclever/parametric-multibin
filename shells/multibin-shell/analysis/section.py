@@ -48,6 +48,8 @@ def describe(pts):
 
 
 def main():
+    if len([a for a in sys.argv[1:] if a != "--raw"]) != 3:
+        sys.exit(__doc__)
     key, axis, value = sys.argv[1], sys.argv[2].lower(), float(sys.argv[3])
     raw = "--raw" in sys.argv
     mesh = trimesh.load_mesh(STL_DIR / fname(key))
