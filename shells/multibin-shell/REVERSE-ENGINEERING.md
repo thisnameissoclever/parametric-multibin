@@ -34,7 +34,7 @@ Positions along a wall are given as t, the distance along the face from a cell c
 Each 50 mm cell stands on its own pad.
 
 - Pad sides are vertical, inset 3.2 from the cell edge, up to z 3.6, then turn out at 45 degrees; the outer flat faces reach full size at z 6.8.
-- Pad corners are chamfered with leg 5.448. Each corner face sits 2.2 inside a 45 degree corner face of leg 8.737 on the cell's own outline (at a shell corner, the shell's outer corner face) and chamfers out at 45 degrees to meet it at z 5.8.
+- Pad corners are chamfered with leg 5.448 (the generator uses 5.4483, which puts the pad's corner faces exactly on the corner planes described next). Each corner face sits 2.2 inside a 45 degree corner face of leg 8.737 on the cell's own outline (at a shell corner, the shell's outer corner face) and chamfers out at 45 degrees to meet it at z 5.8.
 - The pad's bottom edge has a 0.4 mm 45 degree chamfer.
 - Between neighbouring pads, the floor's underside is at z 5.2. In the gap between two pads' 45 degree faces it stops at z 5.4 instead: beside the flat part of each pad side between columns, and along the whole length of each seam between rows, through the crossings. The gap's half width at height z is 6.8 - z.
 - Where a face carries a rail channel, the channel's dovetail runs down through the foot to the base.
@@ -46,13 +46,13 @@ Each whole cell's pad, centred on the cell, has these features.
 - Four blind threaded holes at (+/-12.5, +/-12.5), up to z 5.2, with a 45 degree entry cone of radius 3.8 at z 0. The thread is right-handed with pitch 3.125. Along the helix coordinate u = z - 3.125 a / 360 (mod 3.125), where a is the angle about the hole axis from +x, the radius rises from 3.0 to 3.5 over u 1.0735 to 2.0110, stays at 3.5 to 2.6360, falls back to 3.0 by 3.5735, and is 3.0 elsewhere.
 - A central pocket:
   - a flared octagon, half width 6.0 at z 0.4 growing at 45 degrees to 8.5 at z 2.9, with corner legs 3.515 and 4.979, and a ceiling at z 3.2;
-  - a seven-sided prism, pointed at (0, 6.021) and cut off flat at y -14.5, with vertices (+/-3.521, -14.5), (+/-8.5, -9.521), (+/-8.5, -2.479) and (0, 6.021); its flat end steps out at 45 degrees to y -14.9 between z 1.8 and 2.2;
+  - a prism with a flat end at y -14.5 and vertices (+/-3.521, -14.5), (+/-8.5, -9.521) and (+/-8.5, -2.479), whose sides would meet in a point at (0, 6.021); the pocket stops at the octagon's face, y 6.0, so the point is cut off there. Its flat end steps out at 45 degrees to y -14.9 between z 1.8 and 2.2;
   - nine ceiling slits 0.1 wide across the prism, every 1 mm from y -14.2, up to z 3.4;
   - a plate up to z 3.4 over |y| <= 5.1, keeping only the octagon's two top chamfers;
   - a square of half width 5.1 up to z 3.6;
   - an octagon of half width 5.1 and leg 2.988 up to z 5.2.
 - Four T-shaped corner pockets along the diagonals, between z 1 and 3 with 0.4 chamfers on their long edges. Each has a neck of half width 2.0 running 2.8 in from the pad's corner face, 26.977 from the pad centre, then a head of half width 3.0 for 2 mm, with a 0.2 chamfer around the opening.
-- Two side clip pockets on each outward-facing pad side, centred at t = +/-7.5, between z 1 and 3. Each is a 6 wide entry from the pad face to an obround head of radius 2.25 centred at (+/-1.25, 18.05) from the pad centre, with a 0.2 chamfer at the opening and ceiling slits 0.1 wide at 16.7, 17.6 and 19.7 from the pad centre, z 2.9 to 3.2. A pad side that faces a neighbouring pad has none.
+- Two side clip pockets on each outward-facing pad side, centred at t = +/-7.5, between z 1 and 3. Each is a 6 wide entry from the pad face to an obround head: two arcs of radius 2.25 centred 1.25 either side of the pocket's centre line, 18.05 from the pad centre, with a 0.2 chamfer at the opening and ceiling slits 0.1 wide at 16.7, 17.6 and 19.7 from the pad centre, z 2.9 to 3.2. A pad side that faces a neighbouring pad has none.
 - A pyramid notch under the middle of each pad side. For the +y side, with the pad face at h = 21.8 from the pad centre, it is bounded by y - z >= h - 2.3 and y -+ x - sqrt(2) z >= h - 4.578.
 
 ## Rail channel
@@ -89,7 +89,8 @@ MultiBuild publishes each shell with one wall kind on all four sides. Every feat
 Run these from the `analysis` folder with the repository's Python environment, `..\..\..\.venv\Scripts\python.exe`. `docs/verification-method.md` at the repository root defines the gates they serve.
 
 - `compare.py` renders each reference configuration and reports the Gate 1 metrics, exiting 1 when any fails; `--report` rewrites `VERIFICATION.md` and refuses unless every expected reference is present.
-- `regress.py` is the regression gate, with its locked `baseline.json`. `selftest.py` runs it against the known-bad fixture in `fixtures` and checks that every section of the gate reports the failure it must.
-- `export_check.py` counts the export artifacts described in `DEVIATIONS.md` M2.
+- `regress.py` is the regression gate, with its locked `baseline.json`. `selftest.py` runs it against the known-bad fixture in `fixtures` and checks that each section of the gate reports a failure the fixture is known to cause.
+- `export_check.py` counts the mesh artifacts described in `DEVIATIONS.md` M2.
+- `gate_test.py` tests the gate's decisions at their limits in seconds; `selftest.py` runs it first.
 - `worst_points.py` lists the worst vertex deviations with their locations; `wall_depth.py` measures recess depth along a vertical line on a wall.
 - `fingerprint.py` (plane inventory), `section.py` (sections with circle fits), `window.py` (windowed sections), `facemap.py` (ray-cast depth images) and `thread_fit.py` (thread profile fit) were used to take the measurements above.

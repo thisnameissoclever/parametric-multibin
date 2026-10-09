@@ -1,5 +1,5 @@
-"""Export artifacts in an STL: zero-area triangles, vertices closer together
-than 0.001 mm, and triangles that cross each other.
+"""Mesh artifacts in an STL: zero-area triangles, separate vertices closer
+together than 0.0001 mm, and triangles that cross each other.
 
 Usage: python export_check.py STL [STL ...]
 
@@ -47,11 +47,9 @@ def depth(ta, tb):
     return min(max(s.max(), 0.0), max(-s.min(), 0.0))
 
 
-def check(path):
-    v, f = load_exact(path)
+def crossings(v, f):
+    """Number of crossing triangle pairs, and the deepest overlap in mm."""
     tri = v[f]
-    area2 = np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1)
-    close = len(cKDTree(v).query_pairs(1e-3))
     tree = trimesh.Trimesh(v, f, process=False).triangles_tree
     lo, hi = tri.min(1) - 1e-9, tri.max(1) + 1e-9
     pairs = [(i, j) for i in range(len(f)) for j in tree.intersection(np.concatenate([lo[i], hi[i]])) if j > i]
@@ -63,8 +61,17 @@ def check(path):
         for k in range(3):
             hit |= segment_crosses(tri[A][:, k], tri[A][:, (k + 1) % 3], tri[B][:, 0], tri[B][:, 1], tri[B][:, 2])
     deepest = max((min(depth(tri[i], tri[j]), depth(tri[j], tri[i])) for i, j in zip(I[hit], J[hit])), default=0.0)
+    return int(hit.sum()), float(deepest)
+
+
+def check(path):
+    v, f = load_exact(path)
+    tri = v[f]
+    area2 = np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1)
+    close = len(cKDTree(v).query_pairs(1e-4))
+    n, deepest = crossings(v, f)
     print(f"{path}: {len(f)} triangles; {int((area2 < 2e-12).sum())} with zero area; "
-          f"{close} vertex pairs closer than 0.001 mm; {int(hit.sum())} crossing triangle pairs, "
+          f"{close} vertex pairs closer than 0.0001 mm; {n} crossing triangle pairs, "
           f"deepest overlap {deepest:.2g} mm")
 
 

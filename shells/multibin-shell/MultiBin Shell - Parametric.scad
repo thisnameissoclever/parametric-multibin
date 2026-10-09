@@ -27,6 +27,11 @@ left_wall = "topped"; // [topped, topless, simple]
 right_wall = "topped"; // [topped, topless, simple]
 
 /* [Hidden] */
+// any other wall kind would build a wall that matches no original
+for (w = [["front_wall", front_wall], ["back_wall", back_wall], ["left_wall", left_wall], ["right_wall", right_wall]])
+    assert(w[1] == "topped" || w[1] == "topless" || w[1] == "simple",
+           str(w[0], " must be topped, topless or simple, not ", w[1]));
+
 $fs = 0.25;
 $fa = 2;
 eps = 0.01;
@@ -64,11 +69,13 @@ floor_z = 6.0;                   // top of the floor
 foot_z  = 6.8;                   // outer face meets the 45-degree foot chamfer
 pad_in  = 3.2;                   // base pad inset from the cell edge
 pad_top = 3.6;                   // pad's vertical side ends here
-pad_c   = 5.448;                 // pad corner chamfer leg
 bridge_z = 5.4;                  // underside of the floor between pads, beside their flat sides
 bridge_lo = 5.2;                 // ... and beside their corner chamfers
 foot_c  = 5.8;                   // corner faces meet their outer plane here
 corner_in = 2.2;                 // pad corner face inset from the outer corner face
+// pad corner chamfer leg, 5.448: set so the pad's corner faces lie exactly on
+// the foot's corner planes (a measured 5.448 left them 0.0002 apart)
+pad_c   = 2 * (U/2 - pad_in) - (U - c_out) + sqrt(2) * corner_in;
 
 // channel (dovetail rail slot), in face coordinates: t along the face,
 // n into the wall from the outer face
@@ -112,9 +119,9 @@ hole_cone = 3.8;                 // entry cone radius at z = 0 (45 degrees)
 
 // Cells along each axis as [centre, width]: whole 50 mm cells from the origin,
 // then one 25 mm cell when the size ends in a half LU. MultiBuild publishes no
-// half-LU widths, so the half cell is this generator's own rule: a narrower pad
-// with the holes that fall on the 25 mm grid, and no rail channel, catch slots
-// or clip pockets, which do not fit in it.
+// half-LU sizes, so the half cell is this generator's own rule: a narrower pad
+// (see half_pad) and no rail channel or catch slots on its stretch of wall,
+// which do not fit in it.
 nxf = floor(NX + eps);
 nyf = floor(NY + eps);
 cols = concat([for (i = [0:1:nxf - 1]) [U * i, U]], NX - nxf > eps ? [[U * nxf - U/4, U/2]] : []);
@@ -552,16 +559,18 @@ module notch_side(sg, c)
                   [-10, c + 25, -1], [10, c + 25, -1], [10, c + 25, 4], [-10, c + 25, 4]],
         faces = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [7, 6, 2, 3], [2, 6, 5, 1], [7, 3, 0, 4]]);
 
-// the central pocket of each pad (built at the origin)
+// the central pocket of each pad (built at the origin). The prism's sides would
+// meet in a point at (0, 6.021); the references stop it at the octagon's face,
+// y = 6.0, so its tip is cut off there.
 function point_prism(b) =
-    [[-(18.021 + b), b], [18.021 + b, b], [8.5, -9.521], [8.5, -2.479], [0, 6.021],
-     [-8.5, -2.479], [-8.5, -9.521]];
+    [[-(18.021 + b), b], [18.021 + b, b], [8.5, -9.521], [8.5, -2.479], [0.021, 6.0],
+     [-0.021, 6.0], [-8.5, -2.479], [-8.5, -9.521]];
 module central_pocket() {
     // flared octagon: half 6.0 at z = 0.4 growing 45 degrees to 8.5 at z = 2.9
     oct_prism(-6.0, 6.0, -6.0, 6.0, 3.515, -1, 0.4 + slab);
     oct_loft(octagon(-6.0, 6.0, -6.0, 6.0, 3.515), octagon(-8.5, 8.5, -8.5, 8.5, 4.979), 0.4, 2.9);
     oct_prism(-8.5, 8.5, -8.5, 8.5, 4.979, 2.9 - slab, 3.2);
-    // pointed-top prism toward -y, its far edge stepping out 45 degrees at 1.8 .. 2.2
+    // the prism, its flat end at -y stepping out 45 degrees between z 1.8 and 2.2
     translate([0, 0, -1]) linear_extrude(height = 2.8 + slab) polygon(point_prism(-14.5));
     oct_loft(point_prism(-14.5), point_prism(-14.9), 1.8, 2.2);
     translate([0, 0, 2.2 - slab]) linear_extrude(height = 1.0 + slab) polygon(point_prism(-14.9));

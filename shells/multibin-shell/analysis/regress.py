@@ -1,26 +1,30 @@
 """Regression gate for the shell generator: prove it still reproduces every
-available reference shell, and that configurations without a reference still
-export clean, unchanged geometry.
+reference shell, and that configurations without a reference still export
+clean, unchanged geometry.
 
 Run after ANY change to the SCAD. Three layers of checking:
 
   HARD       the Gate 1 limits in docs/verification-method.md.
-  DRIFT      no metric may get worse than the locked baseline by more than a
-             small tolerance.
-  SOUNDNESS  configurations with no reference: mesh topology (watertight, one
-             body, every edge shared by exactly two faces, no duplicated
-             facets) and bounding box and volume against the baseline.
+  DRIFT      no reference metric may get worse than the locked baseline by more
+             than a small tolerance.
+  SOUNDNESS  configurations with no reference: mesh soundness (see
+             compare.audit) and an exact geometry digest against the baseline,
+             so any change to their shape fails until it is relocked.
+
+Every reference in refs.EXPECTED and every configuration in the baseline must
+be checked on every full run; a missing reference file or a dropped
+configuration is a failure, never a skip. Any render message other than an
+expected one is a failure, and so is an expected one that does not appear. The
+decisions are the *_failures functions below, which gate_test.py tests at their
+limits.
 
 Requires the packages in requirements.txt at the repository root.
 
 Usage:
   python regress.py                    check against analysis/baseline.json
-  python regress.py --update-baseline  relock the baseline to current output
+  python regress.py --update-baseline  relock the baseline (refused over any failure)
   python regress.py --quick            skip the soundness section (not with --update-baseline)
   python regress.py --scad PATH        check a different SCAD (selftest.py uses this)
-
-A reference that was present when the baseline was locked must still be
-present; a missing one is a failure, never a skip.
 """
 
 import json
@@ -29,21 +33,17 @@ import sys
 from pathlib import Path
 
 import compare
-from compare import OPENSCAD, audit, clean, generate, metrics, out_for, render_problems
+from compare import EXPORT_FORMAT, OPENSCAD, audit, clean, generate, metrics, out_for, render_problems
 from refs import EXPECTED, STL_DIR, fname
 
 BASELINE = Path(__file__).parent / "baseline.json"
 HARD = dict(bbox=0.02, vol=0.5, p99=0.05, mx=0.2)
 DRIFT = dict(bbox=0.002, vol=0.01, p99=0.002, mx=0.002)
-# a configuration without a reference fails when its bounding box or volume
-# moves by more than this; repeat renders agree to 0.001 mm3
-SOUND_BBOX = 0.001
-SOUND_VOL = 0.01
 
 W = '"{}"'
 SOUNDNESS = [
     ("half_w_1.5x1x1",     dict(width_lu=1.5, height_lu=1, depth_lu=1)),
-    # typed off the half-LU step: must round to 1.5 x 1 x 1, same as above
+    # typed off the half-LU step: must round to 1.5 x 1 x 1, the same digest as above
     ("offstep_1.3x1.1x0.8", dict(width_lu=1.3, height_lu=1.1, depth_lu=0.8)),
     ("half_h_2x1.5x2",     dict(width_lu=2, height_lu=1.5, depth_lu=2)),
     ("half_both_2.5x1.5x1.5", dict(width_lu=2.5, height_lu=1.5, depth_lu=1.5)),
@@ -72,19 +72,78 @@ SOUNDNESS = [
                                 left_wall=W.format("simple"), right_wall=W.format("simple"))),
 ]
 
+# console texts a configuration must print, and may print without failing
+EXPECTED_MESSAGES = {
+    "offstep_1.3x1.1x0.8": ["NOTE: width_lu = 1.3 is not on the half-LU grid; using 1.5.",
+                            "NOTE: height_lu = 1.1 is not on the half-LU grid; using 1.",
+                            "NOTE: depth_lu = 0.8 is below the minimum; using 1."],
+}
 
-def render(name, params, scad):
+
+# ------------------------------------------------------------------ decisions
+
+def hard_failures(key, m):
+    """A reference metric over its Gate 1 limit."""
+    return [f"{key}: HARD {field}={m[field]:.4f} > {limit}" for field, limit in HARD.items() if m[field] > limit]
+
+
+def drift_failures(key, now, was):
+    """A reference metric worse than its locked value by more than the drift tolerance."""
+    return [f"{key}: DRIFT {field} {was[field]:.4f} -> {now[field]:.4f}"
+            for field, tol in DRIFT.items() if now[field] - was[field] > tol]
+
+
+def message_failures(label, problems, expected, seen):
+    """Render messages that should not be there, and expected ones that did not appear."""
+    return ([f"{label}: render message: {line}" for line in problems]
+            + [f"{label}: expected render message missing: {e}" for e in expected if e not in seen])
+
+
+def sound_failures(name, a, was):
+    """A configuration without a reference that is unsound, not in the baseline,
+    or changed since the baseline was locked (was is None when relocking)."""
+    out = [] if clean(a) else [f"soundness/{name}: mesh not a clean single shell: {a}"]
+    if was is None:
+        return out
+    if was == "absent":
+        return out + [f"soundness/{name}: absent from baseline; relock to cover it"]
+    if a["digest"] != was["digest"]:
+        de = max(abs(x - y) for x, y in zip(a["extents"], was["extents"]))
+        dv = a["volume"] - was["volume"]
+        out.append(f"soundness/{name}: geometry changed vs baseline (bbox {de:.4f} mm, volume {dv:+.3f} mm3)")
+    return out
+
+
+def coverage_failures(missing, base, update, quick, sound_names):
+    """References or configurations that a run would otherwise silently skip."""
+    out = [f"{k}: reference file missing: {fname(k)}" for k in missing]
+    if update:
+        return out
+    models = base.get("models", {})
+    out += [f"{k}: in the baseline but not in refs.EXPECTED" for k in models if k not in EXPECTED]
+    out += [f"{k}: absent from baseline; relock to cover it" for k in EXPECTED if k not in missing and k not in models]
+    if not quick:
+        out += [f"soundness/{n}: in the baseline but no longer checked"
+                for n in base.get("soundness", {}) if n not in sound_names]
+    return out
+
+
+# ------------------------------------------------------------------ running
+
+def render(name, params, scad, expected=()):
+    """Render a configuration; returns (path or None, error text, problems, expected texts seen)."""
     d = out_for(scad) / "soundness"
     d.mkdir(parents=True, exist_ok=True)
     stl = d / f"{name}.stl"
     if stl.exists():
         stl.unlink()
-    args = [OPENSCAD, "-o", str(stl), str(scad)]
+    args = [OPENSCAD, "-o", str(stl), *EXPORT_FORMAT, str(scad)]
     for k, v in params.items():
         args += ["-D", f"{k}={v}"]
     r = subprocess.run(args, capture_output=True, text=True, timeout=3600)
-    problems = render_problems(r.stderr)
-    return (stl, None, problems) if stl.exists() else (None, r.stderr[-2000:], problems)
+    problems = render_problems(r.stderr, expected)
+    seen = [e for e in expected if e in r.stderr]
+    return (stl if stl.exists() else None), r.stderr[-2000:], problems, seen
 
 
 def collapse(row):
@@ -110,94 +169,53 @@ def main():
     if not update and not BASELINE.exists():
         print("no baseline; run with --update-baseline first")
         return 2
-    base_raw = {} if update else json.loads(BASELINE.read_text(encoding="utf-8"))
-    current, failures, sound_now = {}, [], {}
-
+    base = {} if update else json.loads(BASELINE.read_text(encoding="utf-8"))
     missing = [k for k in EXPECTED if not (STL_DIR / fname(k)).is_file()]
     present = [k for k in EXPECTED if k not in missing]
-    if missing:
-        print("!" * 78)
-        print(f"MISSING REFERENCE FILES ({len(missing)} of {len(EXPECTED)}): the gate runs at reduced coverage.")
-        for k in missing:
-            print(f"  {k}: {fname(k)}")
-        print("!" * 78)
-    if not present:
-        failures.append("no reference files found: nothing was compared")
-    for k in missing:
-        if k not in base_raw.get("missing_at_lock", []) and not update:
-            failures.append(f"{k}: reference file missing, but it was present when the baseline was locked")
+    failures = coverage_failures(missing, base, update, quick, [n for n, _ in SOUNDNESS])
+    current, sound_now = {}, {}
 
     print("=" * 78)
     print(f"REFERENCE MATCH ({len(present)} of {len(EXPECTED)} references)")
     print("=" * 78)
     for key in present:
         p, secs, problems = generate(key, scad)
-        for line in problems:
-            failures.append(f"{key}: render message: {line}")
+        failures += message_failures(key, problems, (), ())
         if p is None:
             failures.append(f"{key}: render failed")
             continue
         m = collapse(metrics(key, p, 0))
         a = audit(p)
-        m.update(dict(render_s=round(secs, 1), **{k: a[k] for k in ("watertight", "bodies", "bad_edges", "dup_faces")}))
+        m.update(render_s=round(secs, 1),
+                 **{k: a[k] for k in ("watertight", "bodies", "bad_edges", "dup_faces", "crossing_depth")})
         current[key] = m
-        for field, limit in HARD.items():
-            if m[field] > limit:
-                failures.append(f"{key}: HARD {field}={m[field]:.4f} > {limit}")
+        failures += hard_failures(key, m)
         if not clean(a):
             failures.append(f"{key}: mesh not a clean single shell: {a}")
-
-    base = base_raw.get("models", {})
-    for k in base_raw.get("missing_at_lock", []):
-        if k in current:
-            failures.append(f"{k}: reference has appeared since the baseline was locked; relock to cover it")
-    if not update:
-        print("=" * 78)
-        print("DRIFT vs BASELINE")
-        print("=" * 78)
-        for key in present:
-            if key not in current:
-                continue
-            if key not in base:
-                failures.append(f"{key}: absent from baseline")
-                continue
-            cells = []
-            for field in ("bbox", "vol", "p99", "mx"):
-                now, was = current[key][field], base[key][field]
-                if now - was > DRIFT[field]:
-                    failures.append(f"{key}: DRIFT {field} {was:.4f} -> {now:.4f}")
-                cells.append(f"{field}={now:.4f}({now - was:+.4f})")
-            print(f"{key:6} " + "  ".join(cells))
+        was = base.get("models", {}).get(key)
+        if was:
+            failures += drift_failures(key, m, was)
+            print(f"{key:6} " + "  ".join(f"{f}={m[f]:.4f}({m[f] - was[f]:+.4f})" for f in DRIFT))
 
     if not quick:
         print("=" * 78)
-        print("SOUNDNESS (no reference; topology + locked bounding box and volume)")
+        print("SOUNDNESS (no reference: mesh soundness and the locked geometry digest)")
         print("=" * 78)
-        golden = base_raw.get("soundness", {})
+        golden = base.get("soundness", {})
         for name, params in SOUNDNESS:
-            stl, err, problems = render(name, params, scad)
-            for line in problems:
-                failures.append(f"soundness/{name}: render message: {line}")
+            expected = EXPECTED_MESSAGES.get(name, [])
+            stl, err, problems, seen = render(name, params, scad, expected)
+            failures += message_failures(f"soundness/{name}", problems, expected, seen)
             if stl is None:
                 failures.append(f"soundness/{name}: render failed")
                 print(f"  {name:24} RENDER FAILED\n{err}")
                 continue
             a = audit(stl)
             sound_now[name] = a
-            note = ""
-            if name in golden:
-                was = golden[name]
-                de = max(abs(x - y) for x, y in zip(a["extents"], was["extents"]))
-                dv = abs(a["volume"] - was["volume"])
-                if de > SOUND_BBOX or dv > SOUND_VOL:
-                    note = f"  GEOMETRY CHANGED (bbox {de:.4f}, vol {dv:.3f})"
-                    failures.append(f"soundness/{name}: geometry moved vs baseline (bbox {de:.4f} mm, volume {dv:.3f} mm3)")
-            elif not update:
-                note = "  (not in baseline)"
-                failures.append(f"soundness/{name}: absent from baseline; relock to cover it")
-            print(f"  {name:24} {'ok' if clean(a) else 'BROKEN'} bbox={a['extents']} vol={a['volume']}{note}")
-            if not clean(a):
-                failures.append(f"soundness/{name}: mesh not a clean single shell: {a}")
+            found = sound_failures(name, a, None if update else golden.get(name, "absent"))
+            failures += found
+            state = "ok" if not found else "CHANGED" if clean(a) else "BROKEN"
+            print(f"  {name:24} {state:7} bbox={a['extents']} vol={a['volume']}")
 
     if update:
         # a baseline locked over a failure would hide it from every later run
@@ -206,8 +224,7 @@ def main():
             for f in failures:
                 print(f"  - {f}")
             return 1
-        BASELINE.write_text(json.dumps(dict(models=current, missing_at_lock=missing, soundness=sound_now),
-                                       indent=2), encoding="utf-8")
+        BASELINE.write_text(json.dumps(dict(models=current, soundness=sound_now), indent=2), encoding="utf-8")
         print(f"baseline relocked: {len(current)} reference(s), {len(sound_now)} soundness config(s)")
         return 0
 
@@ -217,9 +234,9 @@ def main():
         for f in failures:
             print(f"  - {f}")
         return 1
-    print(f"PASS - {len(present)} of {len(EXPECTED)} references match"
-          + (f" ({len(missing)} missing)" if missing else "")
-          + ("" if quick else ", and every soundness configuration is clean and unchanged") + ".")
+    print(f"PASS - all {len(EXPECTED)} references match"
+          + (" (soundness section skipped)" if quick
+             else ", and every soundness configuration is sound and unchanged") + ".")
     return 0
 
 

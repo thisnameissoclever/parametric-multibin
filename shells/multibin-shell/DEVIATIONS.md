@@ -1,6 +1,6 @@
 # DEVIATIONS - known differences between the remake and MultiBuild's shells
 
-This file lists every known difference between `MultiBin Shell - Parametric.scad` and MultiBuild's shell STL files, and every rule the generator applies where MultiBuild publishes no example.
+This file lists every known difference between `MultiBin Shell - Parametric.scad` and MultiBuild's shell STL files, and every rule the generator applies where MultiBuild publishes no example. Sizes are in LU, MultiBoard's 50 mm layout unit, written width x front-to-back x height as printed.
 
 Evidence commands run from the `analysis` folder with the repository's Python environment, `..\..\..\.venv\Scripts\python.exe`, written below as `python`. The reference files live in the folder that `local-paths.json` names for `shell` (see `tools/mbpaths.py`). `python compare.py KEY` writes each render to `.local-build\out\shell\KEY.stl` at the repository root, which is `..\..\..\.local-build\out\shell\KEY.stl` from the `analysis` folder.
 
@@ -9,7 +9,7 @@ Entries starting with M are measured surface differences, Q entries are quirks o
 ## Contents
 
 - [M1. Faceting of the threaded holes, up to 0.02 mm](#m1-faceting-of-the-threaded-holes-up-to-002-mm)
-- [M2. Export artifacts from OpenSCAD](#m2-export-artifacts-from-openscad)
+- [M2. Mesh artifacts under 0.001 mm](#m2-mesh-artifacts-under-0001-mm)
 - [M3. Pocket ceiling slits stop 0.01 mm short](#m3-pocket-ceiling-slits-stop-001-mm-short)
 - [Q1. Short seam groove in a Simple wall's partial top band](#q1-short-seam-groove-in-a-simple-walls-partial-top-band)
 - [P1. Half-LU cells](#p1-half-lu-cells)
@@ -20,27 +20,30 @@ Entries starting with M are measured surface differences, Q entries are quirks o
 
 The generator builds each threaded hole, its thread and its entry cone with 32 facets per turn (`thr_steps`). A chord across one facet sits r (1 - cos(180 / 32)) inside the true circle, which is 0.017 mm at a radius of 3.5 mm. The references are faceted more finely, so their vertices and the render's vertices sit up to about 0.02 mm from each other's surfaces at the holes. These are the largest differences anywhere on the references.
 
-Evidence: after `python compare.py T212`, `python worst_points.py T212 ..\..\..\.local-build\out\shell\T212.stl` lists the worst render vertex, 0.0168 mm from the reference surface, at (9.063, 12.744, 0.339) on the entry cone of the hole at (12.5, 12.5), and the worst reference vertex, 0.0188 mm from the render surface, at (15.815, -11.511, 5.200) at the top of the hole at (12.5, -12.5). `VERIFICATION.md` gives the all-vertices maximum for every reference.
+Evidence: after `python compare.py T212`, `python worst_points.py T212 ..\..\..\.local-build\out\shell\T212.stl` lists the worst render vertices, 0.0168 mm from the reference surface, on the holes' entry cones, for example at (34.063, 12.744, 0.339) beside the hole at (37.5, 12.5); and the worst reference vertices, 0.0188 mm from the render surface, at the tops of the holes, for example at (15.815, -11.511, 5.200) beside the hole at (12.5, -12.5). `VERIFICATION.md` gives the all-vertices maximum for every reference.
 
 Left as is. The threads dominate render time, and finer facets would slow every render for a difference under a tenth of a 0.2 mm print layer.
 
-## M2. Export artifacts from OpenSCAD
+## M2. Mesh artifacts under 0.001 mm
 
-OpenSCAD 2021.01's STL export leaves three kinds of artifact that the references do not have. None changes the shape by more than a millionth of a millimetre.
+The generator's exports contain four kinds of tiny artifact that the references do not. None changes the shape by more than 0.001 mm.
 
-- Zero-area triangles, whose three corners lie on one line. OpenSCAD writes them where a face's edge meets a vertex of a neighbouring face: it splits that edge at the vertex and fills the split with a flat sliver. They keep every edge shared by exactly two faces, so the mesh stays closed.
-- Pairs of separate vertices less than 0.001 mm apart.
-- A few pairs of triangles that cross each other by less than 0.000001 mm, where coordinates rounded on export put a vertex a hair through a neighbouring face. They occur, for example, where the threaded holes' entry cones meet the threads, at the floor gaps between rows of pads, and around the corner slots.
+- Zero-area triangles, whose three corners lie on one line. OpenSCAD 2021.01 writes them where a face's edge meets a vertex of a neighbouring face: it splits that edge at the vertex and fills the split with a flat sliver. They keep every edge shared by exactly two faces, so the mesh stays closed.
+- Slivers and pairs of separate vertices less than 0.0001 mm apart, where the edges of two cuts meet at almost the same point, for example at the threaded holes' entry cones, where the side clip pockets' ceiling slits meet their rounded heads, and at the rail channel notches. Some slivers fold back against a neighbouring triangle, which a mesh checker may report as a folded edge.
+- A step 0.001 mm tall where a loft meets the solid that continues it, at the top of the inner rim chamfer and where the central pocket's flat end steps out. The generator builds each loft from end slabs 0.001 mm thick (`slab`, see the lesson on loft overlaps in `docs/lessons-learned.md`), and each step's two edges are vertex pairs 0.001 mm apart.
+- A few pairs of triangles that cross each other by less than 0.0000001 mm, where coordinates rounded on export put a vertex a hair through a neighbouring face. On the 1x1x1 Topped Rail render all of them are at the threaded holes' entry cones.
+
+These figures are for binary STL, which the harness renders with `--export-format binstl`. OpenSCAD 2021.01's default output is ASCII STL, which keeps six significant digits: 0.001 mm beyond 100 mm from the origin. That rounding merges some of the close vertices, and on long shells it pushes vertices up to about 0.003 mm through neighbouring faces.
 
 The drawer generator's exports contain zero-area triangles too.
 
-Evidence: after `python compare.py T111`, `python export_check.py ..\..\..\.local-build\out\shell\T111.stl` reports 112 zero-area triangles, 46 vertex pairs closer than 0.001 mm and 4 crossing triangle pairs with a deepest overlap of 4.7e-07 mm. The same command on the 1x1x1 Topped Rail reference reports none of the three. `regress.py` checks that every render is watertight and one body, with every edge shared by exactly two faces.
+Evidence: after `python compare.py T111`, `python export_check.py ..\..\..\.local-build\out\shell\T111.stl` reports 24 zero-area triangles, 208 vertex pairs closer than 0.0001 mm and 12 crossing triangle pairs with a deepest overlap of 2.8e-08 mm. The same command on the 1x1x1 Topped Rail reference reports none of the three. `regress.py` fails any render with two triangles crossing by more than 0.001 mm; across the locked baseline the deepest crossing is under 0.00001 mm.
 
-Left as is: the generator cannot control how OpenSCAD triangulates and rounds its output. A slicer may report these triangles as degenerate facets when it imports the file; how each slicer treats them has not been tested here.
+Left as is. The generator cannot control how OpenSCAD triangulates and rounds its output, and the 0.001 mm loft steps are the price of a loft construction that exports cleanly at every size. A slicer may report the zero-area triangles as degenerate facets when it imports the file; how each slicer treats them has not been tested here.
 
 ## M3. Pocket ceiling slits stop 0.01 mm short
 
-The nine 0.1 mm slits in the ceiling of each pad's central pocket run across the pocket's seven-sided prism. In the references they end on the prism's sides. In the generator they stop 0.01 mm short of those sides. With ends flush with the sides, OpenSCAD 2021.01's export sealed some slits into closed voids, with edges shared by four triangles, for pads at some positions far from the origin, for example on shells 7 LU or more front to back and on 12 LU wide shells.
+The nine 0.1 mm slits in the ceiling of each pad's central pocket run across the pocket's seven-sided prism. In the references they end on the prism's sides. In the generator they stop 0.01 mm short of those sides. With ends flush with the sides, OpenSCAD 2021.01's export sealed some slits into closed voids for pads at some positions far from the origin: on a 1 x 7 x 1 shell with edges shared by four triangles, and on a 12 x 1 x 1 shell as a separate closed body inside the pad.
 
 Evidence: the soundness section of `regress.py` renders 1 x 7 x 1 and 12 x 1 x 1 shells, which exported broken slits before the change, and checks that each is a single sound body. The 0.01 mm difference is below the faceting differences in M1.
 
@@ -60,7 +63,7 @@ The generator reproduces it for every Simple wall with a partial top band. The 1
 
 MultiBuild publishes no shell whose width or front-to-back size is a half LU. When a size ends in a half LU, the generator lays out whole 50 mm cells from the origin and then one 25 mm cell at the +x end or at the back. This rule is the generator's own:
 
-- The half cell sits at the +x end and at the back (+y). The drawer generator counts its 50 mm height bands from the drawer's bottom, and a drawer's height runs front to back in the shell, so its side-wall jogs line up with the shell's seam slots when the drawer's bottom faces -y. A shell mounted with its print-orientation front (-y) down therefore takes the matching drawer upright, with the half band at the top of both. Across the width the drawer centres its cells, but no drawer feature engages a shell feature across the width.
+- The half cell sits at the +x end and at the back (+y). The drawer generator counts its 50 mm height bands from the drawer's bottom, and a drawer's height runs front to back in the shell, so its side-wall jogs line up with the shell's seam slots when the drawer's bottom faces -y. A shell mounted with its print-orientation front (-y) down therefore takes the matching drawer upright, with the half band at the top of both. Across the width the drawer centres its cells while the shell's half cell sits at +x; the drawer is held by detent bumps at its corners, which snap into the shell's corner slots wherever its cells fall.
 - The half cell's pad has the same outline rules as a whole pad, at its own size, and keeps the whole pad's features wherever they fit. Each hole, corner and 50 mm side sits at the same distance from the pad's faces as on a whole pad, so these features are placed exactly as there: the threaded holes on the 25 mm grid, a corner clip pocket at each corner, and on each 50 mm side the mid-edge notch and, where the side faces outward, the two side clip pockets.
 - Three features are left out. A 25 mm side has no notch: the notch is 9.2 mm wide at the face, wider than the 7.7 mm flat part of the side, so it would cut into both corner chamfers. A 25 mm side has no side clip pockets: centred 7.5 from the middle of the side, they would run into the corner chamfers. And there is no central pocket: its flat end is 14.9 from the pad centre, beyond a pad face 9.3 from it. A shell's 25 mm pad sides therefore cannot take a side clip.
 - No rail channel, and no catch slots, sit on the half cell's stretch of wall. A half cell is always at the end of a face, where the flat outer face between the seam and the corner chamfer is 25 - 8.737 = 16.3 mm long, shorter than a channel bulge, which is 17 mm wide. A pair of catch slots reaches 16.4 mm each way from a cell centre, beyond the half cell's 12.5.
@@ -68,7 +71,7 @@ MultiBuild publishes no shell whose width or front-to-back size is a half LU. Wh
 - Seam features follow every seam, including the seam next to the half cell: the floor bridge gap, the seam grooves and the seam slots.
 - On a Topless Rail wall, the rim groove runs through the half cell, since it has no channel to avoid.
 
-Evidence: the soundness section of `regress.py` renders half-LU configurations, including Topless and Simple ones, and checks that each is a single sound body with locked bounding box and volume. For the channel through a half pad's foot, from the repository root run `& "C:\Program Files\OpenSCAD\openscad.exe" -o .local-build\out\shell\h.stl -D width_lu=2.5 -D height_lu=1.5 -D depth_lu=2 "shells\multibin-shell\MultiBin Shell - Parametric.scad"`, then from the `analysis` folder compare `python wall_depth.py ..\..\..\.local-build\out\shell\h.stl -x 105 0 100 3.6 7 0.3` (right wall, over a half pad) with `python wall_depth.py ..\..\..\.local-build\out\shell\h.stl +y 0 -30 -25 3.6 7 0.3` (front wall, over a whole pad): both report a depth of 2.2 from z 4.8 upward.
+Evidence: the soundness section of `regress.py` renders half-LU configurations, including Topless and Simple ones, and checks that each is a single sound body whose exact geometry matches the locked baseline. For the channel through a half pad's foot, from the repository root run `& "C:\Program Files\OpenSCAD\openscad.exe" -o .local-build\out\shell\h.stl -D width_lu=2.5 -D height_lu=1.5 -D depth_lu=2 "shells\multibin-shell\MultiBin Shell - Parametric.scad"`, then from the `analysis` folder compare `python wall_depth.py ..\..\..\.local-build\out\shell\h.stl -x 105 0 100 3.6 7 0.3` (right wall, over a half pad) with `python wall_depth.py ..\..\..\.local-build\out\shell\h.stl +y 0 -30 -25 3.6 7 0.3` (front wall, over a whole pad): both report a depth of 2.2 from z 4.8 upward.
 
 ## P2. A different wall kind on each side
 

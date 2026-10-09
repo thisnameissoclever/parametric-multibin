@@ -52,7 +52,7 @@ Each part has `analysis/regress.py` and a locked `analysis/baseline.json`. One r
 
 A missing reference file is reported on every run, never skipped silently. In the shell's gate, a reference that was present when the baseline was locked fails the run if it goes missing. Run the gate after every change. Relock the baseline only after an intended geometry change, and say so in the commit message.
 
-The gate is proven by running it against a known-bad version of the generator kept in `analysis/fixtures/`. That run must fail, and each section of the gate must report the fixture defect it is meant to catch, so that a section that stopped working is noticed; the shell's `analysis/selftest.py` checks this.
+The gate is proven by running it against a known-bad version of the generator kept in `analysis/fixtures/`. That run must fail, and each section of the gate must report a defect the fixture is known to have, so that a section that stopped working is noticed; the shell's `analysis/selftest.py` checks this. A fixture's defects are usually far over the limits, so the shell's `analysis/gate_test.py` also tests each of the gate's decisions at its limit.
 
 ## Gate 2: adversarial review
 

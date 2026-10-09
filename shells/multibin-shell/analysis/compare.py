@@ -2,17 +2,19 @@
 and measure how far the two meshes are apart.
 
 Usage: python compare.py [keys...] [--report] [--clusters N]
-Default keys: every reference shell present on this machine (see refs.py).
+Default keys: every reference in refs.EXPECTED; a missing reference file is a
+failure.
 --report writes VERIFICATION.md; it refuses unless every reference in
 refs.EXPECTED is present and no keys are given.
 --clusters N lists the N worst deviation clusters per direction (default 10).
-Exits 1 when any compared reference fails the gate column of the report.
+Exits 1 when any reference is missing or fails the gate column of the report.
 
 Thresholds (docs/verification-method.md): bounding box <= 0.02 mm per axis,
 volume <= 0.5 %, p99 <= 0.05 mm, maximum <= 0.2 mm.
 """
 
 import hashlib
+import re
 import subprocess
 import sys
 import time
@@ -22,6 +24,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
+from export_check import crossings, load_exact
 from refs import EXPECTED, STL_DIR, SIZES, WALLS, available, fname
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools"))
@@ -53,13 +56,32 @@ def out_for(scad=None):
     return d
 
 
-# OpenSCAD output lines that mean a render is not clean. OpenSCAD 2021.01
-# prints its nonplanar-face notice without a WARNING prefix.
-BAD_RENDER = ("WARNING", "ERROR", "nonplanar")
+# The lines OpenSCAD 2021.01 prints for every clean render: cache and timing
+# statistics and the summary of the result. Any other line, such as a WARNING,
+# an ERROR, a DEPRECATED notice, an ECHO or the nonplanar-face notice (which
+# has no WARNING prefix), is a render message.
+NORMAL_RENDER_LINE = re.compile(
+    r"^(Geometries in cache|Geometry cache size in bytes|CGAL Polyhedrons in cache|CGAL cache size in bytes"
+    r"|Total rendering time|Top level object is a 3D object|Simple|Vertices|Halfedges|Edges|Halffacets"
+    r"|Facets|Volumes):")
 
 
-def render_problems(stderr):
-    return [ln.strip() for ln in stderr.splitlines() if any(b in ln for b in BAD_RENDER)]
+def render_problems(stderr, expected=()):
+    """Render messages in OpenSCAD's console output, except lines containing one
+    of the expected texts."""
+    lines = [ln.strip() for ln in stderr.splitlines() if ln.strip()]
+    return [ln for ln in lines if not NORMAL_RENDER_LINE.match(ln) and not any(e in ln for e in expected)]
+
+
+# Renders are exported as binary STL, which keeps 32-bit coordinates: about
+# 0.00007 mm at 600 mm, the largest shell. OpenSCAD's default ASCII STL keeps
+# six significant digits, 0.001 mm beyond 100 mm, and that rounding alone can
+# push a vertex 0.003 mm through a neighbouring face on a long shell.
+EXPORT_FORMAT = ["--export-format", "binstl"]
+
+# deepest crossing between two triangles that a sound render may have: binary
+# STL rounding stays under 0.0001 mm, and overlapping solids cross far deeper
+CROSSING_LIMIT = 1e-3
 
 
 def zero_area_triangles(stl):
@@ -70,25 +92,46 @@ def zero_area_triangles(stl):
     return int((np.linalg.norm(np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]), axis=1) < 1e-9).sum())
 
 
+def geometry_digest(v, f):
+    """SHA-256 of the triangles as written, independent of their order in the
+    file and of which corner each triangle starts at. Repeat renders of the same
+    generator give the same triangles in a different order, so any change to
+    the digest is a change to the geometry or its triangulation."""
+    tri = v[f]
+    n = len(tri)
+    rots = np.stack([np.roll(tri, -k, axis=1).reshape(n, 9) for k in range(3)], axis=1)
+    # keep the rotation whose first corner is smallest, then sort the triangles
+    pick = np.lexsort((rots[:, :, 2], rots[:, :, 1], rots[:, :, 0]), axis=-1)[:, 0]
+    best = rots[np.arange(n), pick]
+    best = best[np.lexsort(best.T[::-1])]
+    return hashlib.sha256(np.ascontiguousarray(best, dtype="<f8").tobytes()).hexdigest()
+
+
 def audit(stl):
-    """Mesh soundness and size of an exported STL."""
-    m = trimesh.load_mesh(stl)
-    m.merge_vertices()
-    _, c = np.unique(m.edges_sorted, axis=0, return_counts=True)
-    _, counts = np.unique(np.sort(m.faces, axis=1), axis=0, return_counts=True)
-    return dict(watertight=bool(m.is_watertight), bodies=int(m.body_count),
+    """Mesh soundness, size and geometry digest of an exported STL. Bodies are
+    counted through shared edges, so two solids touching at one vertex are two."""
+    v, f = load_exact(stl)
+    m = trimesh.Trimesh(v, f, process=False)
+    _, c = np.unique(np.sort(m.edges, axis=1), axis=0, return_counts=True)
+    _, counts = np.unique(np.sort(f, axis=1), axis=0, return_counts=True)
+    bodies = len(trimesh.graph.connected_components(m.face_adjacency, nodes=np.arange(len(f)), min_len=1))
+    _, deepest = crossings(v, f)
+    return dict(watertight=bool(m.is_watertight), bodies=int(bodies),
                 bad_edges=int((c != 2).sum()), dup_faces=int((counts > 1).sum()),
-                extents=[round(float(v), 4) for v in m.extents], volume=round(float(m.volume), 3))
+                crossing_depth=float(deepest),
+                extents=[round(float(x), 4) for x in m.extents], volume=round(float(m.volume), 3),
+                digest=geometry_digest(v, f))
 
 
 def clean(a):
-    return a["watertight"] and a["bodies"] == 1 and a["bad_edges"] == 0 and a["dup_faces"] == 0
+    return (a["watertight"] and a["bodies"] == 1 and a["bad_edges"] == 0 and a["dup_faces"] == 0
+            and a["crossing_depth"] <= CROSSING_LIMIT)
 
 
 def generate(key, scad=None):
     """Render a reference configuration; returns (path or None, seconds, problems)."""
     out = out_for(scad) / f"{key}.stl"
-    args = [OPENSCAD, "-o", str(out), str(scad or SCAD)]
+    args = [OPENSCAD, "-o", str(out), *EXPORT_FORMAT, str(scad or SCAD)]
     for k, v in params(key).items():
         args += ["-D", f"{k}={v}"]
     t0 = time.time()
@@ -162,7 +205,7 @@ def scad_digest():
 
 def gate(r, problems, sound):
     """PASS only when every limit is met, the mesh is sound and the render
-    printed no message."""
+    printed nothing beyond OpenSCAD's normal statistics."""
     mx = max(r["ref->gen"]["mx"], r["gen->ref"]["mx"], r["ref->gen"]["vmax"], r["gen->ref"]["vmax"])
     p99 = max(r["ref->gen"]["p99"], r["gen->ref"]["p99"])
     ok = (r["bbox"] <= 0.02 and r["vol"] <= 0.5 and p99 <= 0.05 and mx <= 0.2
@@ -184,10 +227,17 @@ def report(rows, timings, problems, sound):
         "",
         f"Renderer: {openscad_version()}.",
         "",
+        "Columns: bbox dmax is the largest difference between the two bounding boxes on any axis; vol delta "
+        "is the volume difference as a percentage of the reference's; p99 is the 99th percentile of the "
+        "distances from sampled surface points to the other mesh, in whichever direction (reference to "
+        "render, or render to reference) is worse; sampled max is the largest of those distances; and "
+        "all-vertices max is the largest distance from any vertex of either mesh to the other.",
+        "",
         "Thresholds (`docs/verification-method.md`): bounding box <= 0.02 mm per axis, volume <= 0.5 %, "
-        "p99 <= 0.05 mm, maximum <= 0.2 mm. The sound column means watertight, one body, every edge "
-        "shared by exactly two faces and no duplicated facets. The gate column is PASS only when every "
-        "limit is met, the mesh is sound and the render printed no message.",
+        "p99 <= 0.05 mm, maximum <= 0.2 mm. The sound column means watertight, one body (counted through "
+        "shared edges), every edge shared by exactly two faces, no duplicated facets, and no two triangles "
+        f"crossing by more than {CROSSING_LIMIT:g} mm. The gate column is PASS only when every limit is met, "
+        "the mesh is sound and the render printed nothing beyond OpenSCAD's normal statistics.",
         "",
         "The sampled columns can differ in the fourth decimal between runs, because OpenSCAD does not "
         "write its triangles in a fixed order; the bounding box, volume and all-vertices columns repeat.",
@@ -207,7 +257,7 @@ def report(rows, timings, problems, sound):
     if noisy:
         lines += ["Render messages:", ""] + [f"- {k}: {m}" for k, v in noisy.items() for m in v] + [""]
     else:
-        lines += ["Every render printed no warning, error or nonplanar-face notice.", ""]
+        lines += ["Every render printed nothing beyond OpenSCAD's normal statistics.", ""]
     (ROOT / "VERIFICATION.md").write_text("\n".join(lines), encoding="utf-8")
     print("wrote VERIFICATION.md")
 
@@ -224,7 +274,11 @@ def main():
             print("refusing --report: it needs every reference in refs.EXPECTED and no named keys; "
                   f"missing: {missing or 'none'}")
             return 2
-    keys = named or available()
+    keys = named or EXPECTED
+    missing = [k for k in keys if not (STL_DIR / fname(k)).is_file()]
+    for k in missing:
+        print(f"[{k}] MISSING reference file: {fname(k)}")
+    keys = [k for k in keys if k not in missing]
     rows, timings, problems, sound = [], {}, {}, {}
     for k in keys:
         p, secs, problems[k] = generate(k)
@@ -239,7 +293,7 @@ def main():
         print()
     if "--report" in args:
         report(rows, timings, problems, sound)
-    failed = [k for k in keys if k not in sound] + [r["key"] for r in rows if gate(r, problems, sound) != "PASS"]
+    failed = missing + [k for k in keys if k not in sound] + [r["key"] for r in rows if gate(r, problems, sound) != "PASS"]
     if failed:
         print(f"FAIL: {', '.join(failed)}")
         return 1

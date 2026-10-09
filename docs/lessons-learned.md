@@ -16,6 +16,8 @@ Mistakes and near misses from building the generators, each with its cause, the 
 - [Check render messages by content, not by prefix](#check-render-messages-by-content-not-by-prefix)
 - [Apply a cut where its feature is defined](#apply-a-cut-where-its-feature-is-defined)
 - [Overlap a loft by exactly its end slab](#overlap-a-loft-by-exactly-its-end-slab)
+- [Test a gate's limits, not only its failures](#test-a-gates-limits-not-only-its-failures)
+- [Measure geometry at full export precision](#measure-geometry-at-full-export-precision)
 
 ## Random sampling hides edge-shaped deviations
 
@@ -35,7 +37,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** for configurations without a reference, lock their bounding box and volume in the regression baseline, and treat any change as a failure until it is shown to be intended.
 
-**Check:** the soundness section of `regress.py` prints the bounding box and volume for each configuration and flags any change beyond its tolerance: 0.001 mm on the bounding box, and 0.01 mm3 of volume for the shell or 0.5 mm3 for the drawer.
+**Check:** the soundness section of `regress.py` prints the bounding box and volume for each configuration. The drawer's gate flags a change beyond 0.001 mm on the bounding box or 0.5 mm3 of volume; the shell's flags any change to an exact digest of the triangles, which also catches a feature that moves without changing the volume.
 
 ## A gate that has never failed is unproven
 
@@ -136,3 +138,23 @@ Mistakes and near misses from building the generators, each with its cause, the 
 **Rule:** a solid that continues a loft overlaps it by exactly the loft's end slab, so the overlapping sections are identical; and a cut that would end exactly on another cut's face stops a small, stated distance short of it.
 
 **Check:** the shell generator's `slab` constant sets every thin hull slab and every overlap with a loft, and the soundness list in `regress.py` includes 1 x 7 x 1 and 12 x 1 x 1 shells, which exported broken slits before the change.
+
+## Test a gate's limits, not only its failures
+
+**What happened:** the shell's gate passed a version whose half-pad clip pockets had moved 1 mm, because its checks on sizes without a reference compared only bounding box and volume. Its self-test could not have noticed a loosened tolerance either: the known-bad fixture's faults were hundreds of times over every limit.
+
+**Cause:** the gate was proven only end to end, against one fixture with large faults, and its locked values were proxies for the shape rather than the shape.
+
+**Rule:** keep each gate decision in a small function and test it at its limit, just under and just over; and for configurations without a reference, lock an exact digest of the geometry rather than a few measures of it.
+
+**Check:** the shell's `analysis/gate_test.py` runs in about a second and fails if any limit moves or any decision changes; `selftest.py` runs it before the end-to-end run against the fixture.
+
+## Measure geometry at full export precision
+
+**What happened:** a new check for triangles crossing each other failed on long shells, with crossings 0.0028 mm deep. The geometry was sound: OpenSCAD 2021.01's default ASCII STL keeps six significant digits, so beyond 100 mm from the origin its coordinates are rounded to 0.001 mm, and that rounding pushed vertices through neighbouring faces.
+
+**Cause:** the harness measured the export format's rounding as if it were the generator's geometry.
+
+**Rule:** render for measurement with `--export-format binstl`, which keeps 32-bit coordinates, and set geometric limits above that format's rounding at the largest size the generator makes.
+
+**Check:** `EXPORT_FORMAT` in the shell's `analysis/compare.py` is used by every render in the harness, and `gate_test.py` checks it.
