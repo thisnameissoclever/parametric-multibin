@@ -1,8 +1,8 @@
 # VERIFICATION - shell Gate 1 mechanical match
 
-Harness: `analysis/compare.py`, run 2026-10-10 01:22 UTC, 50000 surface samples per direction per model, bounding-box aligned, plus a sweep of every vertex in both directions.
+Harness: `analysis/compare.py`, run from 2026-10-10 04:30 to 2026-10-10 04:49 UTC, 50000 surface samples per direction per model, bounding-box aligned, plus a sweep of every vertex in both directions.
 
-File verified: `MultiBin Shell - Parametric.scad`, SHA-256 CFAFBAF9C8F5DBDFA661AE04D8EF16AA0F480F38E7B0470B7968815937D07008, computed with LF line endings as git stores the file (`git show <commit>:"shells/multibin-shell/MultiBin Shell - Parametric.scad" | sha256sum`).
+File verified: `MultiBin Shell - Parametric.scad`, SHA-256 0D3456B53278DB369DB8416E75C3D8D058E48D96C567C9A3000893E261FB5895, computed with LF line endings as git stores the file (`git show <commit>:"shells/multibin-shell/MultiBin Shell - Parametric.scad" | sha256sum`).
 
 Renderer: OpenSCAD version 2021.01.
 
@@ -10,25 +10,25 @@ Columns: bbox dmax is the largest difference between the two bounding boxes on a
 
 Thresholds (`docs/verification-method.md`): bounding box <= 0.02 mm per axis, volume <= 0.5 %, p99 <= 0.05 mm, maximum <= 0.2 mm. The sound column means watertight and consistently wound with positive volume, one body (counted through shared edges), every edge shared by exactly two faces, no duplicated facets, and no two triangles that share at most one vertex crossing by more than 0.001 mm. The gate column is PASS only when every limit is met, the mesh is sound and the render printed nothing beyond OpenSCAD's normal statistics.
 
-A feature smaller than the 0.2 mm maximum, such as a 0.2 mm opening chamfer or a 0.1 mm slit, could be missing without failing these limits; the regression gate (`analysis/regress.py`) holds every reference to its locked worst point within 0.002 mm, which catches that. A feature moved by less than the worst point, which is at the threaded holes, changes none of these columns; the regression gate's soundness section catches such a move through its vertex digests, but neither this report nor `regress.py --quick` does.
+A feature smaller than the 0.2 mm maximum, such as a 0.2 mm opening chamfer or a 0.1 mm slit, could be missing without failing these limits; the regression gate (`analysis/regress.py`) holds every reference to its locked worst point within 0.002 mm, which catches that. A feature moved by less than the worst point, which is at the threaded holes, leaves the maximum unchanged: it shows in the p99 or volume column only when it covers enough surface, as the rail channel's bulges do, and a small feature moved that little can leave every column unchanged. The regression gate's soundness section catches any such move through its vertex digests; this report and `regress.py --quick` catch it only through p99 or volume.
 
-The sampled columns can differ in the fourth decimal between runs, because OpenSCAD does not write its triangles in a fixed order; the bounding box, volume and all-vertices columns repeat.
+The sampled columns can differ between runs, p99 in the fourth decimal and the sampled maximum in the third, because OpenSCAD does not write its triangles in a fixed order, so the sample points differ; the bounding box, volume and all-vertices columns repeat.
 
 | model | bbox dmax (mm) | vol delta (%) | p99 (worse dir) | sampled max | all-vertices max | sound | render (s) | gate |
 |---|---|---|---|---|---|---|---|---|
-| T111 | 0.0000 | 0.008 | 0.0092 | 0.0183 | 0.0188 | yes | 27 | PASS |
-| T212 | 0.0000 | 0.005 | 0.0060 | 0.0177 | 0.0188 | yes | 52 | PASS |
-| T313 | 0.0000 | 0.004 | 0.0037 | 0.0183 | 0.0188 | yes | 84 | PASS |
-| T3135 | 0.0000 | 0.003 | 0.0014 | 0.0173 | 0.0188 | yes | 92 | PASS |
-| T323 | 0.0000 | 0.006 | 0.0061 | 0.0178 | 0.0188 | yes | 136 | PASS |
-| T1215 | 0.0000 | 0.007 | 0.0081 | 0.0170 | 0.0188 | yes | 47 | PASS |
+| T111 | 0.0000 | 0.008 | 0.0092 | 0.0173 | 0.0188 | yes | 26 | PASS |
+| T212 | 0.0000 | 0.005 | 0.0060 | 0.0177 | 0.0188 | yes | 55 | PASS |
+| T313 | 0.0000 | 0.004 | 0.0037 | 0.0183 | 0.0188 | yes | 89 | PASS |
+| T3135 | 0.0000 | 0.003 | 0.0014 | 0.0173 | 0.0188 | yes | 91 | PASS |
+| T323 | 0.0000 | 0.006 | 0.0061 | 0.0178 | 0.0188 | yes | 135 | PASS |
+| T1215 | 0.0000 | 0.007 | 0.0080 | 0.0174 | 0.0188 | yes | 47 | PASS |
 | O111 | 0.0000 | 0.009 | 0.0091 | 0.0186 | 0.0188 | yes | 26 | PASS |
-| O212 | 0.0000 | 0.005 | 0.0060 | 0.0182 | 0.0188 | yes | 52 | PASS |
-| O323 | 0.0000 | 0.006 | 0.0065 | 0.0173 | 0.0188 | yes | 140 | PASS |
-| O1215 | 0.0000 | 0.007 | 0.0080 | 0.0177 | 0.0188 | yes | 48 | PASS |
+| O212 | 0.0000 | 0.005 | 0.0059 | 0.0182 | 0.0188 | yes | 52 | PASS |
+| O323 | 0.0000 | 0.006 | 0.0065 | 0.0173 | 0.0188 | yes | 141 | PASS |
+| O1215 | 0.0000 | 0.007 | 0.0079 | 0.0177 | 0.0188 | yes | 48 | PASS |
 | S111 | 0.0000 | 0.007 | 0.0091 | 0.0177 | 0.0188 | yes | 19 | PASS |
 | S212 | 0.0000 | 0.004 | 0.0069 | 0.0185 | 0.0188 | yes | 36 | PASS |
-| S323 | 0.0000 | 0.005 | 0.0068 | 0.0179 | 0.0188 | yes | 95 | PASS |
-| S1215 | 0.0000 | 0.006 | 0.0083 | 0.0182 | 0.0188 | yes | 35 | PASS |
+| S323 | 0.0000 | 0.005 | 0.0068 | 0.0179 | 0.0188 | yes | 97 | PASS |
+| S1215 | 0.0000 | 0.006 | 0.0084 | 0.0182 | 0.0188 | yes | 35 | PASS |
 
 Every render printed nothing beyond OpenSCAD's normal statistics.

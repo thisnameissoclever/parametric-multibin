@@ -198,6 +198,9 @@ class Steps:
     baseline file. gate_test.py drives run() with fakes in their place, so the
     way run() combines the decisions is tested as well as the decisions."""
 
+    def digest(self, scad):
+        return compare.scad_digest(scad)
+
     def missing_refs(self):
         return [k for k in EXPECTED if not (STL_DIR / fname(k)).is_file()]
 
@@ -240,6 +243,8 @@ def run(steps, scad, update=False, accept=False, quick=False, alternate=False, l
         log("no baseline; run with --update-baseline first")
         return 2, []
     base = {} if update else old
+    digest = steps.digest(scad)
+    log(f"generator {scad}, SHA-256 {digest}")
     missing = steps.missing_refs()
     present = [k for k in EXPECTED if k not in missing]
     failures = coverage_failures(missing, base, update, quick, [n for n, _ in SOUNDNESS])
@@ -309,6 +314,10 @@ def run(steps, scad, update=False, accept=False, quick=False, alternate=False, l
                 failures.append(f"rejected/{name}: expected the render to stop with: {error}")
             log(f"  {name:24} {'rejected' if stl is None and error in err else 'NOT REJECTED'}")
 
+    # every render reads the file afresh, so an edit during the run would mix two versions
+    if steps.digest(scad) != digest:
+        failures.append("the generator changed during the run; run the gate again")
+
     if update:
         # a relock must not quietly accept a regression: list what it would
         # change, and require --accept-drift once the change is known to be intended
@@ -325,7 +334,7 @@ def run(steps, scad, update=False, accept=False, quick=False, alternate=False, l
             for f in failures:
                 log(f"  - {f}")
             return 1, failures
-        steps.write_baseline(dict(models=current, soundness=sound_now))
+        steps.write_baseline(dict(models=current, soundness=sound_now, scad_digest=digest))
         log(f"baseline relocked: {len(current)} reference(s), {len(sound_now)} soundness config(s)")
         return 0, failures
 

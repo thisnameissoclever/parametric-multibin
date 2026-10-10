@@ -23,6 +23,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 - [Read the whole diff of a scripted edit](#read-the-whole-diff-of-a-scripted-edit)
 - [Test the real steps, not only their stand-ins](#test-the-real-steps-not-only-their-stand-ins)
 - [Look past the largest difference](#look-past-the-largest-difference)
+- [A mutation test needs passing tests to start from](#a-mutation-test-needs-passing-tests-to-start-from)
 
 ## Random sampling hides edge-shaped deviations
 
@@ -206,10 +207,20 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 ## Look past the largest difference
 
-**What happened:** a reviewer found the rail channel's bulges 0.021 mm short at each end on every reference, and the side clip pockets' heads faceted 0.011 mm off. Neither showed in the gate's numbers, because the threaded holes' faceting, 0.019 mm, sets every maximum.
+**What happened:** a reviewer found the rail channel's bulges 0.021 mm short at each end on every reference, and the side clip pockets' heads faceted 0.011 mm off. Neither stood out in the gate's numbers: both were under the limits and were locked into the baseline as they were, and the threaded holes' faceting, 0.019 mm, sets every maximum. The bulges showed only in the 99th percentile distance, which fell on every reference with rail channels once they were fixed.
 
 **Cause:** the bulge's measured half length, 3.521 mm, had been rounded to 3.5. It is 8.5 tan 22.5 degrees, the half side of a regular octagon 17 mm across its flats.
 
 **Rule:** once the largest difference is explained, measure again without it and explain the next ones; and when a measurement lies close to a round number, look for the construction that gives it exactly.
 
 **Check:** `worst_points.py KEY STL N --away-from-holes` lists the worst points with the threaded holes left out, and `--below D` lists those under a known larger difference; `DEVIATIONS.md` explains every point above 0.01 mm that they show on the references.
+
+## A mutation test needs passing tests to start from
+
+**What happened:** a new unit test of the shell gate failed because its tolerance was too tight, and the mutation test run alongside it reported every mutation caught. Each mutation had been "caught" by the test that already failed.
+
+**Cause:** `mutation_test.py` counted any failing run of `gate_test.py` as a catch, without first checking that the unmutated tests pass.
+
+**Rule:** run the tests once without any mutation and stop if they fail; count a mutation as caught only against a passing start.
+
+**Check:** `mutation_test.py` runs `gate_test.py` on an unmutated copy first and exits 1, without testing any mutation, if that run fails.

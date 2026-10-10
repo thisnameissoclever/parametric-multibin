@@ -17,7 +17,7 @@ height_lu = 1; // [0.5:0.5:12]
 depth_lu = 2; // [1:0.5:12]
 
 /* [Walls (front faces the front of the build plate)] */
-// Rail channels sit on whole 50 mm cells: a side shorter than 1 LU, and the half-LU end of a side, have none
+// Front wall. Rail channels sit only on whole 50 mm cells, so a side shorter than 1 LU, and the half-LU end of a side, have none
 front_wall = "topped"; // [topped, topless, simple]
 // Back wall
 back_wall = "topped"; // [topped, topless, simple]

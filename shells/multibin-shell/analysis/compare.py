@@ -78,8 +78,9 @@ def render_problems(stderr, expected=()):
 
 # Renders are exported as binary STL, which keeps 32-bit coordinates: about
 # 0.00007 mm at 600 mm, the largest shell. OpenSCAD's default ASCII STL keeps
-# six significant digits, 0.001 mm beyond 100 mm, and that rounding alone
-# pushed vertices up to 0.0003 mm through neighbouring faces on 12 LU shells.
+# six significant digits, 0.001 mm beyond 100 mm, and on 12 LU shells from an
+# earlier version of the generator that rounding alone pushed vertices up to
+# 0.0003 mm through neighbouring faces.
 EXPORT_FORMAT = ["--export-format", "binstl"]
 
 # deepest crossing between two triangles that a sound render may have: binary
@@ -235,10 +236,22 @@ def openscad_version():
     return (r.stdout + r.stderr).strip()
 
 
-def scad_digest():
-    """SHA-256 of the generator with LF line endings, as git stores it, so the
-    digest matches `git show <commit>:<path> | sha256sum` on any machine."""
-    return hashlib.sha256(SCAD.read_bytes().replace(b"\r\n", b"\n")).hexdigest().upper()
+def scad_digest(path=None):
+    """SHA-256 of the generator (or of the SCAD file at path) with LF line
+    endings, as git stores it, so the digest matches
+    `git show <commit>:<path> | sha256sum` on any machine."""
+    return hashlib.sha256(Path(path or SCAD).read_bytes().replace(b"\r\n", b"\n")).hexdigest().upper()
+
+
+def report_refusal(missing, n_rows, digest_start, digest_end):
+    """Why VERIFICATION.md must not be written, or None. The digest is taken at
+    the start and the end of the run, so a report cannot credit renders of one
+    version of the generator to another."""
+    if missing or n_rows != len(EXPECTED):
+        return "a reference is missing or failed to render"
+    if digest_end != digest_start:
+        return "the generator changed during the run"
+    return None
 
 
 def gate(r, problems, sound):
@@ -249,12 +262,12 @@ def gate(r, problems, sound):
     return "PASS" if ok else "FAIL"
 
 
-def report(rows, timings, problems, sound):
-    digest = scad_digest()
+def report(rows, timings, problems, sound, started, digest):
     lines = [
         "# VERIFICATION - shell Gate 1 mechanical match",
         "",
-        f"Harness: `analysis/compare.py`, run {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}, "
+        f"Harness: `analysis/compare.py`, run from {started.strftime('%Y-%m-%d %H:%M')} to "
+        f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}, "
         f"{N_SAMPLES} surface samples per direction per model, bounding-box aligned, "
         f"plus a sweep of every vertex in both directions.",
         "",
@@ -279,12 +292,15 @@ def report(rows, timings, problems, sound):
         "A feature smaller than the 0.2 mm maximum, such as a 0.2 mm opening chamfer or a 0.1 mm slit, could be "
         "missing without failing these limits; the regression gate (`analysis/regress.py`) holds every reference "
         "to its locked worst point within 0.002 mm, which catches that. A feature moved by less than the "
-        "worst point, which is at the threaded holes, changes none of these columns; the regression gate's "
-        "soundness section catches such a move through its vertex digests, but neither this report nor "
-        "`regress.py --quick` does.",
+        "worst point, which is at the threaded holes, leaves the maximum unchanged: it shows in the p99 or "
+        "volume column only when it covers enough surface, as the rail channel's bulges do, and a small feature "
+        "moved that little can leave every column unchanged. The regression gate's soundness section catches any "
+        "such move through its vertex digests; this report and `regress.py --quick` catch it only through p99 "
+        "or volume.",
         "",
-        "The sampled columns can differ in the fourth decimal between runs, because OpenSCAD does not "
-        "write its triangles in a fixed order; the bounding box, volume and all-vertices columns repeat.",
+        "The sampled columns can differ between runs, p99 in the fourth decimal and the sampled maximum in the "
+        "third, because OpenSCAD does not write its triangles in a fixed order, so the sample points differ; the "
+        "bounding box, volume and all-vertices columns repeat.",
         "",
         "| model | bbox dmax (mm) | vol delta (%) | p99 (worse dir) | sampled max | all-vertices max | sound | render (s) | gate |",
         "|---|---|---|---|---|---|---|---|---|",
@@ -318,6 +334,7 @@ def main():
             print("refusing --report: it needs every reference in refs.EXPECTED and no named keys; "
                   f"missing: {missing or 'none'}")
             return 2
+        started, digest = datetime.now(timezone.utc), scad_digest()
     keys = named or EXPECTED
     missing = [k for k in keys if not (STL_DIR / fname(k)).is_file()]
     for k in missing:
@@ -336,10 +353,11 @@ def main():
             print(f"[{k}] zero-area triangles in the export: {zero_area_triangles(p)}")
         print()
     if "--report" in args:
-        if missing or len(rows) != len(EXPECTED):
-            print("not writing VERIFICATION.md: a reference is missing or failed to render")
+        reason = report_refusal(missing, len(rows), digest, scad_digest())
+        if reason:
+            print(f"not writing VERIFICATION.md: {reason}")
             return 1
-        report(rows, timings, problems, sound)
+        report(rows, timings, problems, sound, started, digest)
     failed = missing + [k for k in keys if k not in sound] + [r["key"] for r in rows if gate(r, problems, sound) != "PASS"]
     if failed:
         print(f"FAIL: {', '.join(failed)}")

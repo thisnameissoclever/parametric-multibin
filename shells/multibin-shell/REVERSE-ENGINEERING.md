@@ -77,7 +77,7 @@ Every recess has the same section: 0.4 deep and 2.2 tall, rising at 1:2 (0.8 tal
 
 ## Clip slots through the walls
 
-- Seam slots at each seam between cells, on every face and every wall kind, centred at z 27 + 25k up to 1 below the rim. Each is 6 x 2 (half sizes 3.0 x 1.0 with 0.4 corner chamfers) from the outer face to depth 0.8 and from depth 2.0 to the inner face. Between depths 0.8 and 2.0 it narrows to 4 wide, with a 0.2 mm 45 degree chamfer on each step's edge. The opening has a 0.2 chamfer at the outer face and a 0.4 chamfer at the inner face (the generator starts it 0.002 deeper; see `DEVIATIONS.md` M4).
+- Seam slots at each seam between cells, on every face and every wall kind, centred at z 27 + 25k, the highest 3 below the rim. Each is 6 x 2 (half sizes 3.0 x 1.0 with 0.4 corner chamfers) from the outer face to depth 0.8 and from depth 2.0 to the inner face. Between depths 0.8 and 2.0 it narrows to 4 wide, with a 0.2 mm 45 degree chamfer on each step's edge. The opening has a 0.2 chamfer at the outer face and a 0.4 chamfer at the inner face (the generator starts it 0.002 deeper; see `DEVIATIONS.md` M4).
 - Corner slots through each diagonal corner face, centred 3 below the rim. The corner wall is 2.0 thick, so only the outer 2.0 of the seam slot section exists there, with a 0.2 chamfer where it opens into the cavity.
 
 ## Wall kinds on each side

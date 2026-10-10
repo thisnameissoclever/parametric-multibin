@@ -1,8 +1,10 @@
 """Prove gate_test.py has teeth: break the gate one way at a time, in a copy
 under .local-build/out/shell/mutation_tree, and check gate_test.py fails for
-each break. A surviving mutation is a gap in the unit tests. A mutation whose
-text is no longer in the code counts as a failure too, so this list must be
-kept in step with the gate's code.
+each break. It first runs gate_test.py on an unmutated copy and stops if that
+fails, since a failing start would count every mutation as caught. A surviving
+mutation is a gap in the unit tests. A mutation whose text is no longer in the
+code counts as a failure too, so this list must be kept in step with the
+gate's code.
 
 Usage: python mutation_test.py     (about a minute; exits 1 on any survivor)
 """
@@ -119,8 +121,23 @@ MUTATIONS = [
      "    def audit(self, path):\n        return audit(path)",
      "    def audit(self, path):\n        return dict(audit(path), crossing_depth=0.0)"),
     ("3MF reader finds no mesh", "export_check.py",
-     "coords = re.findall(r'<vertex x=\"([^\"]+)\" y=\"([^\"]+)\" z=\"([^\"]+)\"', model)",
-     "coords = re.findall(r'<vertex x=\"([^\"]+)\" y=\"([^\"]+)\" z=\"([^\"]+)\"', model)[:0]"),
+    "    if not coords or not tri:\n        raise", "    coords = []\n    if False:\n        raise"),
+    ("3MF reader accepts an empty mesh", "export_check.py", "    if not coords or not tri:", "    if False:"),
+    ("real measure drops volume and bounding box", "regress.py",
+     "        return summary(metrics(key, path, 0))", "        return dict(summary(metrics(key, path, 0)), vol=0.0, bbox=0.0)"),
+    ("metrics compares the render with itself", "compare.py",
+     "    ref = trimesh.load_mesh(STL_DIR / fname(key))", "    ref = trimesh.load_mesh(gen_path)"),
+    ("real coverage finds no missing reference", "regress.py",
+     "return [k for k in EXPECTED if not (STL_DIR / fname(k)).is_file()]", "return []"),
+    ("run ignores 3MF render messages", "regress.py",
+     'failures += message_failures(f"soundness/{name} 3MF", problems, expected, seen)',
+     'failures += message_failures(f"soundness/{name} 3MF", [], expected, seen)'),
+    ("run ignores a generator changed mid-run", "regress.py", "    if steps.digest(scad) != digest:", "    if False:"),
+    ("relock records no digest", "regress.py", ", scad_digest=digest))", "))"),
+    ("report ignores a generator changed mid-run", "compare.py",
+     "    if digest_end != digest_start:", "    if False:"),
+    ("digest keeps Windows line endings", "compare.py",
+     '.read_bytes().replace(b"\\r\\n", b"\\n")', ".read_bytes()"),
     ("rejection checks only that no file was written", "regress.py",
      "if stl is not None or error not in err:", "if stl is not None:"),
     ("relock ignores a dropped reference", "regress.py",
@@ -135,15 +152,25 @@ MUTATIONS = [
 ]
 
 
+def fresh_copy():
+    if TREE.exists():
+        shutil.rmtree(TREE)
+    shutil.copytree(REPO / "tools", TREE / "tools")
+    if (REPO / "local-paths.json").exists():
+        shutil.copy(REPO / "local-paths.json", TREE / "local-paths.json")
+    shutil.copytree(SRC, ANA, ignore=shutil.ignore_patterns("fixtures", "__pycache__", "baseline.json"))
+
+
 def main():
+    # a gate_test.py that already fails would count every mutation as caught
+    fresh_copy()
+    if subprocess.run([sys.executable, "gate_test.py"], cwd=ANA, capture_output=True, text=True).returncode != 0:
+        print("gate_test.py fails without any mutation; fix it before testing mutations")
+        shutil.rmtree(TREE, ignore_errors=True)
+        return 1
     survivors = []
     for name, fname, old, new in MUTATIONS:
-        if TREE.exists():
-            shutil.rmtree(TREE)
-        shutil.copytree(REPO / "tools", TREE / "tools")
-        if (REPO / "local-paths.json").exists():
-            shutil.copy(REPO / "local-paths.json", TREE / "local-paths.json")
-        shutil.copytree(SRC, ANA, ignore=shutil.ignore_patterns("fixtures", "__pycache__", "baseline.json"))
+        fresh_copy()
         path = ANA / fname
         s = path.read_text(encoding="utf-8")
         if s.count(old) != 1:

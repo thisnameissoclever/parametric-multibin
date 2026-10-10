@@ -15,14 +15,16 @@ a6ff94e. Against the current baseline it has, among other faults:
   HARD               Topless rim grooves stop at the seams: 0.4 mm on O212;
                      Simple walls lack the full rim groove: p99 0.14 mm on S111
   DRIFT              its slot mouth chamfer puts T111's worst point at 0.046 mm,
-                     against 0.019 locked
+                     against 0.019 locked, and its volume difference at 0.022 %,
+                     against 0.008 %
   soundness, shape   half-LU shells differ in several ways, among them channels
                      blocked over half pads and missing half-pad clip pockets
   soundness, mesh    broken pocket slits on 1 x 7 x 1
   reference mesh     triangles crossing 0.006 mm deep on the 3 LU wide
                      references, among them T313
   3MF export         its threaded holes' entry cones cross the thread at shared
-                     angles, leaving separate vertices at identical coordinates
+                     angles, leaving separate vertices at identical coordinates;
+                     its 3MF exports print the nonplanar-face notice too
   3MF merge          its seam slots' inner chamfers start in the inner grooves'
                      floor plane, so merging the 4 x 1 x 1 export's vertices
                      within 0.00001 mm leaves edges with four triangles
@@ -53,10 +55,12 @@ EXPECTED_FAILURES = [
     ("HARD maximum", "O212: HARD mx="),
     ("HARD p99", "S111: HARD p99="),
     ("DRIFT", "T111: DRIFT mx"),
+    ("DRIFT volume", "T111: DRIFT vol"),
     ("soundness shape", "soundness/half_w_1.5x1x1: geometry changed vs baseline"),
     ("soundness mesh", "soundness/long_1x7x1: mesh not a clean single shell"),
     ("reference mesh", "T313: mesh not a clean single shell: triangles crossing"),
     ("3MF export", "soundness/half_both_2.5x1.5x1.5: 3MF has"),
+    ("3MF render messages", "soundness/half_both_2.5x1.5x1.5 3MF: render message"),
     ("3MF merge", "soundness/wide_4x1x1: 3MF merged within 1e-05 mm"),
     ("expected notes", "soundness/thin_1.5x0.5x1: expected render message missing"),
     ("rejected sizes", "rejected/offstep_width_1.3: expected the render to stop"),

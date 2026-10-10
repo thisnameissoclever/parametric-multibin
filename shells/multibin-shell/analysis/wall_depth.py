@@ -1,10 +1,10 @@
 """Recess depth along a vertical line on a wall face, measured by casting
-horizontal rays from a point inside the cavity toward the wall.
+horizontal rays from a point toward the wall, from the cavity or from outside the shell.
 
 Usage: python wall_depth.py KEY|STL DIR X Y PLANE Z0 Z1 [STEP]
   KEY|STL  a reference key from refs.py, or the path of a rendered STL
   DIR      ray direction: +x, -x, +y or -y (toward the wall)
-  X Y      ray start, inside the cavity, in the generator's frame (first cell
+  X Y      ray start, in the cavity or outside the shell, in the generator's frame (first cell
            centred on the origin, base at z = 0)
   PLANE    the wall's flat face coordinate along DIR, for example 22 for the
            inner face of the +x wall of a 1 LU wide shell

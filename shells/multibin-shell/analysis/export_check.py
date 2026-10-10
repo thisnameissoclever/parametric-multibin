@@ -19,8 +19,8 @@ through the other's plane. A triangle has zero area when twice its area is
 under 2e-12 mm2.
 """
 
-import re
 import sys
+import xml.etree.ElementTree as ET
 import zipfile
 from collections import Counter
 
@@ -104,11 +104,16 @@ def zero_area_count(v, f):
 
 
 def read_3mf(path):
-    """The vertex coordinates of a 3MF file's mesh, as written, and its triangles."""
+    """The vertex coordinates of a 3MF file's mesh, as written, and its
+    triangles, read as XML. A file with no vertices or no triangles is an
+    error, so a reader that finds nothing cannot pass the checks."""
     z = zipfile.ZipFile(path)
-    model = z.read(next(n for n in z.namelist() if n.endswith(".model"))).decode()
-    coords = re.findall(r'<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"', model)
-    tri = re.findall(r'<triangle v1="(\d+)" v2="(\d+)" v3="(\d+)"', model)
+    root = ET.fromstring(z.read(next(n for n in z.namelist() if n.endswith(".model"))))
+    elements = [(e.tag.rsplit("}", 1)[-1], e) for e in root.iter()]
+    coords = [(e.get("x"), e.get("y"), e.get("z")) for tag, e in elements if tag == "vertex"]
+    tri = [(e.get("v1"), e.get("v2"), e.get("v3")) for tag, e in elements if tag == "triangle"]
+    if not coords or not tri:
+        raise ValueError(f"{path}: no mesh in the 3MF model ({len(coords)} vertices, {len(tri)} triangles)")
     return coords, np.array(tri, dtype=np.int64).reshape(-1, 3)
 
 

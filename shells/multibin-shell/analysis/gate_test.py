@@ -7,6 +7,8 @@ notice. The mesh checks run on small synthetic meshes written to
 Usage: python gate_test.py     (exits 1 if any test fails)
 """
 
+import contextlib
+import io
 import sys
 import zipfile
 
@@ -55,7 +57,7 @@ def bowtie():
     return stl("bowtie", bow)
 
 
-def model(coords, tris=()):
+def model(coords, tris=((0, 1, 1),)):
     """The text of a 3MF model holding these vertices and triangles."""
     verts = "".join(f'<vertex x="{x}" y="{y}" z="{z}"/>' for x, y, z in coords)
     faces = "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}" />' for a, b, c in tris)
@@ -237,6 +239,16 @@ def test_3mf():
                                  ("together", [(0, 0, 0), (1, 0, 0), (0, 0, 0)], 1),
                                  ("signed zero", [("0.000000", 0, 0), ("-0.000000", 0, 0)], 1)):
         check(f"3MF coincident vertices counted ({name})", export_check.coincident_3mf(threemf(name, model(coords))) == groups)
+    single = threemf("single_quotes", "<model><mesh><vertices><vertex x='0' y='0' z='0'/><vertex x='1' y='0' z='0'/>"
+                                      "<vertex x='0' y='0' z='0'/></vertices><triangles>"
+                                      "<triangle v1='0' v2='1' v3='2'/></triangles></mesh></model>")
+    check("a 3MF written with single quotes is read", export_check.coincident_3mf(single) == 1)
+    try:
+        export_check.coincident_3mf(threemf("empty", "<model><mesh><vertices/><triangles/></mesh></model>"))
+        refused = False
+    except ValueError:
+        refused = True
+    check("a 3MF with no mesh is an error, not a pass", refused)
     near = fin(0.000005)
     check("3MF merge folds a fin into an edge with four triangles", export_check.merge_faults(near, 1e-5) == 1)
     check("3MF merge leaves vertices farther apart than the distance", export_check.merge_faults(near, 1e-6) == 0)
@@ -254,6 +266,32 @@ def test_real_steps():
           steps.coincident_3mf(threemf("together", model([(0, 0, 0), (1, 0, 0), (0, 0, 0)]))) == 1)
     check("the real merge step applies both distances", steps.merge_faults(fin(0.00005)) == {1e-5: 0, 1e-4: 1})
     check("the real merge step finds a fin at either distance", steps.merge_faults(fin(0.000005)) == {1e-5: 1, 1e-4: 1})
+    # the real measuring and coverage steps, with the reference folder pointed
+    # at a synthetic reference for the first key
+    refs = TMP / "refs"
+    refs.mkdir(parents=True, exist_ok=True)
+    cube().export(refs / regress.fname(EXPECTED[0]))
+    saved = compare.STL_DIR, regress.STL_DIR
+    compare.STL_DIR = regress.STL_DIR = refs
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            m = steps.measure(EXPECTED[0], stl("scaled", cube().apply_scale(1.01)))
+        missing = steps.missing_refs()
+    finally:
+        compare.STL_DIR, regress.STL_DIR = saved
+    check("the real measure step measures volume", abs(m["vol"] - (1.01 ** 3 - 1) * 100) < 1e-3)   # STL keeps 32-bit floats
+    check("the real measure step measures the bounding box", abs(m["bbox"] - 0.1) < 1e-6)
+    check("the real measure step measures the maximum", m["mx"] > 0.04)
+    check("the real coverage step finds missing references", missing == EXPECTED[1:])
+    scad = TMP / "digest.scad"
+    scad.write_bytes(b"cube(1);\r\n")
+    check("the generator digest ignores line endings", steps.digest(scad) == compare.scad_digest(TMP / "digest.scad")
+          and steps.digest(scad) == __import__("hashlib").sha256(b"cube(1);\n").hexdigest().upper())
+    check("the report refuses when the generator changed during its run",
+          compare.report_refusal([], len(EXPECTED), "A", "B") == "the generator changed during the run")
+    check("the report refuses a missing reference", compare.report_refusal(["K"], len(EXPECTED), "A", "A"))
+    check("the report refuses a failed render", compare.report_refusal([], len(EXPECTED) - 1, "A", "A"))
+    check("the report is written when nothing is wrong", compare.report_refusal([], len(EXPECTED), "A", "A") is None)
 
 
 class FakeSteps:
@@ -275,6 +313,8 @@ class FakeSteps:
         self.reject_writes = faults.get("reject_writes", False)
         self.fail_refs = faults.get("fail_refs", [])
         self.fail_renders = faults.get("fail_renders", [])
+        self.sound_messages_fmt = faults.get("sound_messages_fmt")
+        self.digests = iter(faults.get("digests", []))
 
     def missing_refs(self):
         return list(self.missing)
@@ -296,10 +336,14 @@ class FakeSteps:
             return out, (expected[0] if self.rejects else ""), [], []
         if (name, fmt) in self.fail_renders:
             return None, "render failed", [], []
-        return f"sound/{name}.{fmt}", "", list(self.sound_messages.get(name, [])),             [e for e in expected if not (fmt == self.unseen_fmt and e in self.unseen)]
+        messages = self.sound_messages.get(name, []) if self.sound_messages_fmt in (None, fmt) else []
+        return f"sound/{name}.{fmt}", "", list(messages),             [e for e in expected if not (fmt == self.unseen_fmt and e in self.unseen)]
 
     def coincident_3mf(self, path):
         return self.threemf
+
+    def digest(self, scad):
+        return next(self.digests, "D")
 
     def merge_faults(self, path):
         return {tol: self.merged.get(tol, 0) for tol in regress.MERGE_TOLS}
@@ -324,6 +368,7 @@ def has(failures, text):
 
 def test_run():
     code, failures, locked = gate_run(None, update=True)
+    check("a relock records the generator's digest", locked is not None and locked.get("scad_digest") == "D")
     check("a clean relock writes the baseline", code == 0 and locked is not None
           and len(locked["models"]) == len(EXPECTED) and len(locked["soundness"]) == len(regress.SOUNDNESS))
     code, failures, _ = gate_run(locked)
@@ -346,6 +391,10 @@ def test_run():
             ("crossing triangles in a reference", dict(audit_over={f"ref/{EXPECTED[0]}": dict(crossing_depth=0.01)}),
              f"{EXPECTED[0]}: mesh not a clean single shell: triangles crossing 0.01 mm deep"),
             ("coincident 3MF vertices", dict(threemf=2), "3MF has 2"),
+            ("a render message in a 3MF export only",
+             dict(sound_messages={regress.THREEMF_CHECK[0]: ["WARNING: x"]}, sound_messages_fmt="3mf"),
+             f"soundness/{regress.THREEMF_CHECK[0]} 3MF: render message: WARNING: x"),
+            ("a generator changed during the run", dict(digests=["A", "B"]), "generator changed during the run"),
             ("a 3MF that a merge within 0.00001 mm folds", dict(merged={1e-5: 2}),
              "3MF merged within 1e-05 mm leaves 2 edge(s)"),
             ("a 3MF that a merge within 0.0001 mm folds", dict(merged={1e-4: 3}),
