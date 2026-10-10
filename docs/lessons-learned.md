@@ -163,7 +163,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** render for measurement with `--export-format binstl`, which keeps 32-bit coordinates, and set geometric limits above that format's rounding at the largest size the generator makes.
 
-**Check:** `EXPORT_FORMAT` in the shell's `analysis/compare.py` is used by every render in the harness, and `gate_test.py` checks it.
+**Check:** `EXPORT_FORMAT` in the shell's `analysis/compare.py`; `gate_test.py` checks its value.
 
 ## Prove a lock is repeatable before relying on it
 
@@ -203,11 +203,11 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** for every stand-in, also test the real step it replaces on a small input that needs no slow tool, and move the logic out of slow steps into functions that can be tested that way.
 
-**Check:** `gate_test.py` tests the real steps' mesh checks and `regress.render_result`, which interprets OpenSCAD's output; `mutation_test.py` breaks the real steps and checks that those tests notice.
+**Check:** `gate_test.py`'s `test_real_steps` and its tests of `regress.render_result`, which interprets OpenSCAD's output; `mutation_test.py`.
 
 ## Look past the largest difference
 
-**What happened:** a reviewer found the rail channel's bulges 0.021 mm short at each end on every reference, and the side clip pockets' heads faceted 0.011 mm off. Neither stood out in the gate's numbers: both were under the limits and were locked into the baseline as they were, and the threaded holes' faceting, 0.019 mm, sets every maximum. The bulges showed only in the 99th percentile distance, which fell on every reference with rail channels once they were fixed.
+**What happened:** a reviewer found the rail channel's bulges 0.021 mm short at each end on every reference, and the side clip pockets' heads faceted 0.011 mm off. Neither stood out in the gate's numbers: both were under the limits and were locked into the baseline as they were, and the threaded holes' faceting, 0.019 mm, sets every maximum. The bulges showed only in the 99th percentile distance and the volume difference, both of which fell on every reference with rail channels once they were fixed.
 
 **Cause:** the bulge's measured half length, 3.521 mm, had been rounded to 3.5. It is 8.5 tan 22.5 degrees, the half side of a regular octagon 17 mm across its flats.
 
