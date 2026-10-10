@@ -46,6 +46,41 @@ def joined(*meshes):
     return trimesh.Trimesh(np.vstack(v), np.vstack(f), process=False)
 
 
+def bowtie():
+    """Two pyramids meeting tip to tip through each other: faces that cross
+    while sharing a vertex."""
+    v = np.array([[0, 0, 10], [-5, -5, 0], [5, -5, 0], [5, 5, 0], [-5, 5, 0]], dtype=float)
+    bow = trimesh.Trimesh(v, np.array([[0, 1, 3], [0, 3, 2], [0, 2, 4], [0, 4, 1], [1, 2, 3], [2, 1, 4]]),
+                          process=False)
+    return stl("bowtie", bow)
+
+
+def model(coords, tris=()):
+    """The text of a 3MF model holding these vertices and triangles."""
+    verts = "".join(f'<vertex x="{x}" y="{y}" z="{z}"/>' for x, y, z in coords)
+    faces = "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}" />' for a, b, c in tris)
+    return f'<model><mesh><vertices>{verts}</vertices><triangles>{faces}</triangles></mesh></model>'
+
+
+def threemf(name, text):
+    TMP.mkdir(parents=True, exist_ok=True)
+    path = TMP / f"{name}.3mf"
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("3D/3dmodel.model", text)
+    return path
+
+
+def fin(gap):
+    """Two closed tetrahedra touching along an edge, with that edge's ends
+    written twice, gap apart: merging vertices closer than gap folds the two
+    copies of the edge into one edge with four triangles."""
+    def tet(a, b, c, d):
+        return [(a, c, b), (a, b, d), (b, c, d), (c, a, d)]
+    coords = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1),
+              (gap, 0, 0), (1 + gap, 0, 0), (0, -1, 0), (0, 0, -1)]
+    return threemf(f"fin_{gap:g}", model(coords, tet(0, 1, 2, 3) + tet(4, 5, 6, 7)))
+
+
 def row(bbox=0.0, vol=0.0, p99=(0.0, 0.0), mx=(0.0, 0.0), vmax=(0.0, 0.0), key="K"):
     """A compare.measure row with chosen values, for the gate's decisions."""
     return dict(key=key, bbox=bbox, vol=vol,
@@ -102,6 +137,15 @@ def test_messages():
                  "PolySet has nonplanar faces. Attempting alternate construction", "anything else"]:
         check(f"'{line[:20]}' is a message", compare.render_problems(normal + line) == [line])
     check("an expected text is not a message", compare.render_problems('ECHO: "NOTE: a"', ["NOTE: a"]) == [])
+    check("a message beside an expected text is still a message",
+          compare.render_problems('WARNING: x\nECHO: "NOTE: a"', ["NOTE: a"]) == ["WARNING: x"])
+    out, _, problems, seen = regress.render_result(TMP / "never_written.stl", 'WARNING: x\nECHO: "NOTE: a"',
+                                                   ["NOTE: a", "NOTE: b"])
+    check("a render that wrote no file returns no path", out is None)
+    check("a render's messages beside its expected texts are reported", problems == ["WARNING: x"])
+    check("only the expected texts that appeared count as seen", seen == ["NOTE: a"])
+    written = stl("written", cube())
+    check("a render that wrote its file returns the path", regress.render_result(written, "", [])[0] == written)
     check("a render that is not simple is a message", compare.render_problems("Simple: no") == ["Simple: no"])
     check("more than one solid is a message", compare.render_problems("Volumes: 3") == ["Volumes: 3"])
     check("an unexpected message fails", regress.message_failures("K", ["WARNING: x"], [], []))
@@ -132,16 +176,17 @@ def test_audit():
     for field, bad in (("watertight", False), ("winding", False), ("volume", -1.0), ("bodies", 2),
                        ("bad_edges", 1), ("dup_faces", 1), ("crossing_depth", compare.CROSSING_LIMIT + 1e-9)):
         check(f"clean rejects {field} = {bad}", not compare.clean(dict(a, **{field: bad})))
+        check(f"the failure names {field} = {bad}", len(compare.unsound_reasons(dict(a, **{field: bad}))) == 1)
+    check("a sound mesh has no failure reasons", compare.unsound_reasons(a) == [])
+    check("a crossing is named with its depth",
+          compare.unsound_reasons(dict(a, crossing_depth=0.0058)) == ["triangles crossing 0.0058 mm deep"])
     flipped = cube()
     faces = flipped.faces.copy()
     faces[0] = faces[0][::-1]
     check("a face wound the wrong way is caught",
           not compare.audit(stl("flipped", trimesh.Trimesh(flipped.vertices, faces, process=False)))["winding"])
-    v = np.array([[0, 0, 10], [-5, -5, 0], [5, -5, 0], [5, 5, 0], [-5, 5, 0]], dtype=float)
-    bow = trimesh.Trimesh(v, np.array([[0, 1, 3], [0, 3, 2], [0, 2, 4], [0, 4, 1], [1, 2, 3], [2, 1, 4]]),
-                          process=False)
     with np.errstate(divide="ignore", invalid="ignore"):       # the bow-tie encloses no volume
-        bow_audit = compare.audit(stl("bowtie", bow))
+        bow_audit = compare.audit(bowtie())
     check("faces crossing while sharing a vertex are caught", bow_audit["crossing_depth"] > compare.CROSSING_LIMIT)
     face = np.array([[0, 0, 0], [10, 0, 0], [0, 10, 0]], dtype=float)
     needle = np.array([[2, 2, -1], [2, 2, 1], [2, 2, 0.5]], dtype=float)   # a flat sliver through the face
@@ -188,33 +233,27 @@ def test_audit():
 
 
 def test_3mf():
-    TMP.mkdir(parents=True, exist_ok=True)
-    def model(coords):
-        verts = "".join(f'<vertex x="{x}" y="{y}" z="{z}"/>' for x, y, z in coords)
-        return f'<model><mesh><vertices>{verts}</vertices><triangles></triangles></mesh></model>'
     for name, coords, groups in (("apart", [(0, 0, 0), (1, 0, 0)], 0),
                                  ("together", [(0, 0, 0), (1, 0, 0), (0, 0, 0)], 1),
                                  ("signed zero", [("0.000000", 0, 0), ("-0.000000", 0, 0)], 1)):
-        path = TMP / f"{name}.3mf"
-        with zipfile.ZipFile(path, "w") as z:
-            z.writestr("3D/3dmodel.model", model(coords))
-        check(f"3MF coincident vertices counted ({name})", export_check.coincident_3mf(path) == groups)
-    # two closed tetrahedra touching along an edge, with that edge's ends written
-    # twice, 0.000005 mm apart: merging within 0.00001 mm folds the two copies of
-    # the edge into one edge with four triangles
-    def tet(a, b, c, d):
-        return [(a, c, b), (a, b, d), (b, c, d), (c, a, d)]
-    coords = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1),
-              (0.000005, 0, 0), (1.000005, 0, 0), (0, -1, 0), (0, 0, -1)]
-    tris = tet(0, 1, 2, 3) + tet(4, 5, 6, 7)
-    path = TMP / "fin.3mf"
-    with zipfile.ZipFile(path, "w") as z:
-        z.writestr("3D/3dmodel.model", model(coords).replace(
-            "<triangles></triangles>",
-            "<triangles>" + "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}" />' for a, b, c in tris) + "</triangles>"))
-    check("3MF merge folds a fin into an edge with four triangles", export_check.merge_faults(path, 1e-5) == 1)
-    check("3MF merge leaves vertices farther apart than the distance", export_check.merge_faults(path, 1e-6) == 0)
+        check(f"3MF coincident vertices counted ({name})", export_check.coincident_3mf(threemf(name, model(coords))) == groups)
+    near = fin(0.000005)
+    check("3MF merge folds a fin into an edge with four triangles", export_check.merge_faults(near, 1e-5) == 1)
+    check("3MF merge leaves vertices farther apart than the distance", export_check.merge_faults(near, 1e-6) == 0)
     check("3MF merge distances are 0.00001 and 0.0001 mm", export_check.MERGE_TOLS == (1e-5, 1e-4))
+
+
+def test_real_steps():
+    """The real run's own steps, on small files: the stand-ins in FakeSteps
+    cannot show that the real ones apply every check."""
+    steps = regress.Steps()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        check("the real audit measures crossings", steps.audit(bowtie())["crossing_depth"] > compare.CROSSING_LIMIT)
+    check("the real audit passes a sound mesh", compare.clean(steps.audit(stl("cube", cube()))))
+    check("the real 3MF step counts coincident vertices",
+          steps.coincident_3mf(threemf("together", model([(0, 0, 0), (1, 0, 0), (0, 0, 0)]))) == 1)
+    check("the real merge step applies both distances", steps.merge_faults(fin(0.00005)) == {1e-5: 0, 1e-4: 1})
+    check("the real merge step finds a fin at either distance", steps.merge_faults(fin(0.000005)) == {1e-5: 1, 1e-4: 1})
 
 
 class FakeSteps:
@@ -304,6 +343,8 @@ def test_run():
             ("a changed shape", dict(audit_over={"sound/half_w_1.5x1x1.stl": dict(digest="x")}), "geometry changed"),
             ("an unsound configuration", dict(audit_over={"sound/half_w_1.5x1x1.stl": dict(bodies=2)}),
              "mesh not a clean single shell"),
+            ("crossing triangles in a reference", dict(audit_over={f"ref/{EXPECTED[0]}": dict(crossing_depth=0.01)}),
+             f"{EXPECTED[0]}: mesh not a clean single shell: triangles crossing 0.01 mm deep"),
             ("coincident 3MF vertices", dict(threemf=2), "3MF has 2"),
             ("a 3MF that a merge within 0.00001 mm folds", dict(merged={1e-5: 2}),
              "3MF merged within 1e-05 mm leaves 2 edge(s)"),
@@ -333,6 +374,12 @@ def test_run():
     code, failures, written = gate_run(smaller, update=True)
     check("a relock refuses to drop a locked configuration without --accept-drift",
           code == 1 and written is None and has(failures, "locked configuration no longer checked"))
+    dropped = dict(locked, models=dict(locked["models"], EXTRA_REF=locked["models"][EXPECTED[0]]))
+    code, failures, written = gate_run(dropped, update=True)
+    check("a relock refuses to drop a locked reference without --accept-drift",
+          code == 1 and written is None and has(failures, "EXTRA_REF: locked reference no longer measured"))
+    check("the gate rejects all three sizes the sliders cannot produce",
+          [r[0] for r in regress.REJECTED] == ["offstep_width_1.3", "zero_height", "deep_12.5"])
     check("the 3MF check covers both half-LU sizes and the 4 x 1 x 1 seams",
           regress.THREEMF_CHECK == ["thin_1.5x0.5x1", "half_both_2.5x1.5x1.5", "wide_4x1x1"])
     check("a relock without the soundness section is refused", gate_run(locked, update=True, quick=True)[0] == 2)
@@ -370,8 +417,8 @@ def test_soundness_and_coverage():
 
 
 def main():
-    for test in (test_limits, test_messages, test_measure, test_audit, test_3mf, test_soundness_and_coverage,
-                 test_run):
+    for test in (test_limits, test_messages, test_measure, test_audit, test_3mf, test_real_steps,
+                 test_soundness_and_coverage, test_run):
         test()
     bad = [name for name, ok in results if not ok]
     for name, ok in results:

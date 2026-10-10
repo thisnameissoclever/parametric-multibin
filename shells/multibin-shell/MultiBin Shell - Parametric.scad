@@ -86,7 +86,9 @@ ch_lip   = 0.4;                  // straight lip before the dovetail flank
 ch_half  = 8.5;                  // half width inside, and at the bulges
 ch_floor = 2.2;                  // depth of the channel floor
 ch_flank = 1.9;                  // flank ends at this depth
-bulge_h  = 5;                    // bulge half length at the face
+// bulge half length at the face: a bulge is a regular octagon 2 * ch_half
+// across its flats, cut off where it meets the channel's half width ch_open
+bulge_h  = ch_half * tan(22.5) + (ch_half - ch_open);
 notch_d  = 0.8;                  // bulge end notches: depth past the bulge side,
 notch_n  = 1.0;                  // starting this far below the face,
 notch_l  = 2.2;                  // and this long, with 45-degree ends
@@ -458,11 +460,12 @@ module slot_mouth()
 // Face frame: t across, n from the outer face inward, z up; centred on z = zc
 //
 // The inner flare starts 0.002 past n = 2.6, the floor of the inner grooves
-// (wall - rec_d), and keeps its 45-degree slope and its end. The grooves are
-// placed from the inner face and the slot from the outer face, so a flare
-// starting in the groove floor's plane meets it a rounding error away, leaving
-// zero-width fins whose vertex pairs a merge on import folds into edges with
-// four faces.
+// (wall - rec_d), and keeps its end section, so its opening at the inner face
+// stays within 0.001 of the original's and its slope steepens slightly. The
+// grooves are placed from the inner face and the slot from the outer face, so
+// a flare starting in the groove floor's plane meets it a rounding error away,
+// leaving zero-width fins whose vertex pairs a merge on import folds into
+// edges with four faces.
 module seam_slot(zc)
     translate([0, 0, zc]) {
         slot_mouth();
@@ -471,8 +474,7 @@ module seam_slot(zc)
         hull() { oct_slab(2.0, 1.0, 0.4, 1.0);   oct_slab(2.0, 1.0, 0.4, 1.8); }
         hull() { oct_slab(2.0, 1.0, 0.4, 1.8);   oct_slab(2.2, 1.0, 0.318, 2.0); }
         hull() { oct_slab(3.0, 1.0, 0.4, 2.0);   oct_slab(3.0, 1.0, 0.4, 2.6 + seam_flare); }
-        hull() { oct_slab(3.0, 1.0, 0.4, 2.6 + seam_flare);
-                 oct_slab(3.5 - seam_flare, 1.5 - seam_flare, 0.693 - seam_flare * (2 - sqrt(2)), 3.1); }
+        hull() { oct_slab(3.0, 1.0, 0.4, 2.6 + seam_flare); oct_slab(3.5, 1.5, 0.693, 3.1); }
     }
 
 // the slot through each outer corner, at the same height as the top seam slots;
@@ -527,10 +529,11 @@ module side_pocket(t) {
             translate([-3, h - 0.2, 1]) cube([6, slab, 2]);
             translate([-3.2, h, 1]) cube([6.4, 0.5, 2]);
         }
-        // ceiling slits, 0.1 wide and 0.2 tall, following the pocket outline
+        // ceiling slits, 0.1 wide and 0.2 tall, following the pocket outline but
+        // stopping 0.01 short of it, as the central pocket's slits do
         translate([0, 0, 2.9]) linear_extrude(height = 0.3)
             intersection() {
-                side_pocket_outline(h);
+                offset(delta = -0.01) side_pocket_outline(h);
                 for (ys = [16.7, 17.6, 19.7]) translate([-10, ys]) square([20, 0.1]);
             }
     }

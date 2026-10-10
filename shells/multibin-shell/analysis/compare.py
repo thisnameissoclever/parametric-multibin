@@ -125,6 +125,26 @@ def clean(a):
             and a["bad_edges"] == 0 and a["dup_faces"] == 0 and a["crossing_depth"] <= CROSSING_LIMIT)
 
 
+def unsound_reasons(a):
+    """Each property clean() requires that the audit a fails, in words."""
+    out = []
+    if not a["watertight"]:
+        out.append("not watertight")
+    if not a["winding"]:
+        out.append("inconsistent winding")
+    if not a["volume"] > 0:
+        out.append(f"volume {a['volume']} not positive")
+    if a["bodies"] != 1:
+        out.append(f"{a['bodies']} bodies")
+    if a["bad_edges"]:
+        out.append(f"{a['bad_edges']} edges not shared by exactly two faces")
+    if a["dup_faces"]:
+        out.append(f"{a['dup_faces']} duplicated facets")
+    if not a["crossing_depth"] <= CROSSING_LIMIT:
+        out.append(f"triangles crossing {a['crossing_depth']:.2g} mm deep")
+    return out
+
+
 def generate(key, scad=None):
     """Render a reference configuration; returns (path or None, seconds, problems)."""
     out = out_for(scad) / f"{key}.stl"
@@ -258,7 +278,10 @@ def report(rows, timings, problems, sound):
         "",
         "A feature smaller than the 0.2 mm maximum, such as a 0.2 mm opening chamfer or a 0.1 mm slit, could be "
         "missing without failing these limits; the regression gate (`analysis/regress.py`) holds every reference "
-        "to its locked worst point within 0.002 mm, which catches that.",
+        "to its locked worst point within 0.002 mm, which catches that. A feature moved by less than the "
+        "worst point, which is at the threaded holes, changes none of these columns; the regression gate's "
+        "soundness section catches such a move through its vertex digests, but neither this report nor "
+        "`regress.py --quick` does.",
         "",
         "The sampled columns can differ in the fourth decimal between runs, because OpenSCAD does not "
         "write its triangles in a fixed order; the bounding box, volume and all-vertices columns repeat.",
@@ -309,7 +332,7 @@ def main():
             rows.append(metrics(k, p, n_clusters))
             sound[k] = clean(audit(p))
             if not sound[k]:
-                print(f"[{k}] mesh not a clean single shell: {audit(p)}")
+                print(f"[{k}] mesh not a clean single shell: {'; '.join(unsound_reasons(audit(p)))}")
             print(f"[{k}] zero-area triangles in the export: {zero_area_triangles(p)}")
         print()
     if "--report" in args:

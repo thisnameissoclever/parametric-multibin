@@ -19,6 +19,8 @@ a6ff94e. Against the current baseline it has, among other faults:
   soundness, shape   half-LU shells differ in several ways, among them channels
                      blocked over half pads and missing half-pad clip pockets
   soundness, mesh    broken pocket slits on 1 x 7 x 1
+  reference mesh     triangles crossing 0.006 mm deep on the 3 LU wide
+                     references, among them T313
   3MF export         its threaded holes' entry cones cross the thread at shared
                      angles, leaving separate vertices at identical coordinates
   3MF merge          its seam slots' inner chamfers start in the inner grooves'
@@ -29,7 +31,9 @@ a6ff94e. Against the current baseline it has, among other faults:
                      stopping with an error
 
 A gate section that stopped working would drop its line from the output, so
-the self-test checks each line, not only the exit status.
+the self-test checks each line, not only the exit status. The fixture causes
+no fault that only the 0.0001 mm 3MF merge finds; gate_test.py shows that the
+real run applies that distance.
 
 Usage: python selftest.py     (about 40 minutes, almost all of it step 3)
 Exits 0 when all three steps pass, 1 otherwise.
@@ -51,6 +55,7 @@ EXPECTED_FAILURES = [
     ("DRIFT", "T111: DRIFT mx"),
     ("soundness shape", "soundness/half_w_1.5x1x1: geometry changed vs baseline"),
     ("soundness mesh", "soundness/long_1x7x1: mesh not a clean single shell"),
+    ("reference mesh", "T313: mesh not a clean single shell: triangles crossing"),
     ("3MF export", "soundness/half_both_2.5x1.5x1.5: 3MF has"),
     ("3MF merge", "soundness/wide_4x1x1: 3MF merged within 1e-05 mm"),
     ("expected notes", "soundness/thin_1.5x0.5x1: expected render message missing"),

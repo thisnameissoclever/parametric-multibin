@@ -2,10 +2,10 @@
   "models": {
     "T111": {
       "bbox": 0.0,
-      "vol": 0.011617133953552038,
-      "p99": 0.010765872512550533,
+      "vol": 0.008283166288403313,
+      "p99": 0.009074373514999054,
       "mx": 0.018792130089052846,
-      "render_s": 15.1,
+      "render_s": 28.6,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -15,10 +15,10 @@
     },
     "T212": {
       "bbox": 0.0,
-      "vol": 0.009186632760720525,
-      "p99": 0.009772408260006072,
+      "vol": 0.005079639559370824,
+      "p99": 0.00603769087774461,
       "mx": 0.018793962319198193,
-      "render_s": 28.5,
+      "render_s": 57.1,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -28,10 +28,10 @@
     },
     "T313": {
       "bbox": 0.0,
-      "vol": 0.008145811284336245,
-      "p99": 0.009404684708271615,
+      "vol": 0.003723093585596663,
+      "p99": 0.003672931812141509,
       "mx": 0.018793962319198193,
-      "render_s": 45.8,
+      "render_s": 94.2,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -41,10 +41,10 @@
     },
     "T3135": {
       "bbox": 0.0,
-      "vol": 0.0076543229234198006,
-      "p99": 0.008428864155959167,
+      "vol": 0.0030463095131585054,
+      "p99": 0.001358485810869855,
       "mx": 0.018793962319198193,
-      "render_s": 49.8,
+      "render_s": 103.5,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -54,10 +54,10 @@
     },
     "T323": {
       "bbox": 0.0,
-      "vol": 0.00952619649741215,
-      "p99": 0.010246031118557286,
+      "vol": 0.005646882256129658,
+      "p99": 0.006092639590493114,
       "mx": 0.018793962319198193,
-      "render_s": 73.6,
+      "render_s": 151.6,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -67,10 +67,10 @@
     },
     "T1215": {
       "bbox": 0.0,
-      "vol": 0.010526591391059168,
-      "p99": 0.010223346584704255,
+      "vol": 0.006915546764332862,
+      "p99": 0.008021428294274763,
       "mx": 0.018792130089052846,
-      "render_s": 26.6,
+      "render_s": 52.8,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -80,10 +80,10 @@
     },
     "O111": {
       "bbox": 0.0,
-      "vol": 0.013352457827029577,
-      "p99": 0.011252164344668358,
+      "vol": 0.008750644390969634,
+      "p99": 0.00909293314437448,
       "mx": 0.018792130089052846,
-      "render_s": 15.3,
+      "render_s": 30.1,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -93,10 +93,10 @@
     },
     "O212": {
       "bbox": 0.0,
-      "vol": 0.010032068044735385,
-      "p99": 0.010808465422645734,
+      "vol": 0.0052658690385745,
+      "p99": 0.005820439205729251,
       "mx": 0.018793962319198193,
-      "render_s": 28.8,
+      "render_s": 57.8,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -106,10 +106,10 @@
     },
     "O323": {
       "bbox": 0.0,
-      "vol": 0.010028820709662307,
-      "p99": 0.010302893643914941,
+      "vol": 0.005762343753494376,
+      "p99": 0.006467992754286557,
       "mx": 0.018793962319198193,
-      "render_s": 74.2,
+      "render_s": 153.3,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -119,10 +119,10 @@
     },
     "O1215": {
       "bbox": 0.0,
-      "vol": 0.011599661097148163,
-      "p99": 0.010743865599108402,
+      "vol": 0.0071829750925817126,
+      "p99": 0.007898736122167795,
       "mx": 0.018792130089052846,
-      "render_s": 26.7,
+      "render_s": 52.6,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -132,10 +132,10 @@
     },
     "S111": {
       "bbox": 0.0,
-      "vol": 0.006648744085509617,
-      "p99": 0.009226557475367393,
+      "vol": 0.006682208949302504,
+      "p99": 0.009279913991167446,
       "mx": 0.018792130089052846,
-      "render_s": 11.9,
+      "render_s": 21.6,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -145,10 +145,10 @@
     },
     "S212": {
       "bbox": 0.0,
-      "vol": 0.00402351827492132,
-      "p99": 0.0068330271330691045,
+      "vol": 0.004001334294743961,
+      "p99": 0.006832989346481373,
       "mx": 0.018793962319198193,
-      "render_s": 20.5,
+      "render_s": 39.8,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -158,10 +158,10 @@
     },
     "S323": {
       "bbox": 0.0,
-      "vol": 0.00459529487112535,
-      "p99": 0.007123098032348797,
+      "vol": 0.0045401886432205555,
+      "p99": 0.006775419875406756,
       "mx": 0.018793962319198193,
-      "render_s": 52.5,
+      "render_s": 100.9,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -171,10 +171,10 @@
     },
     "S1215": {
       "bbox": 0.0,
-      "vol": 0.00558465582771365,
-      "p99": 0.008386115615710198,
+      "vol": 0.005568573679348333,
+      "p99": 0.008407288175669382,
       "mx": 0.018792130089052846,
-      "render_s": 19.9,
+      "render_s": 36.3,
       "watertight": true,
       "winding": true,
       "bodies": 1,
@@ -196,8 +196,8 @@
         50.0,
         55.0
       ],
-      "volume": 37055.179,
-      "digest": "e9ef1030ca4bff9f177488dde5b91ae0560f3e71f591022d8fe675448a026c01"
+      "volume": 37054.311,
+      "digest": "f36b48130f0c3dc85e9740a4f939c993dd7f89039341ff92bf82948255529d5b"
     },
     "half_h_2x1.5x2": {
       "watertight": true,
@@ -211,8 +211,8 @@
         75.0,
         105.0
       ],
-      "volume": 97273.57,
-      "digest": "e1b1a0d09d3b3fa267b4cb604007597c20198cffec70914c68bbbd901d363c11"
+      "volume": 97270.496,
+      "digest": "2ca2993859c664ab92372b41e70c3a9576f913c003fa91d92fd6022a0d05985f"
     },
     "half_both_2.5x1.5x1.5": {
       "watertight": true,
@@ -226,8 +226,8 @@
         75.0,
         80.0
       ],
-      "volume": 96541.872,
-      "digest": "e16d7744a5cef9f56f5c6c8816331577e753e050d5d3dbd4ee2f19643a01c472"
+      "volume": 96539.65,
+      "digest": "0ea02606011c78a18dba4bfc6d2e5545502124b9fd030310a533142abc9e155e"
     },
     "thin_1.5x0.5x1": {
       "watertight": true,
@@ -241,8 +241,8 @@
         25.0,
         55.0
       ],
-      "volume": 25269.638,
-      "digest": "aaa01299dc02d2a3527525a49c8aeb917eaff8c038223f225a837e84a66e52de"
+      "volume": 25269.196,
+      "digest": "d48173ff0ff0b6574704d850c747d701ef0ee7c995ff58f20b93a1ae02c7ba2c"
     },
     "deep_1x1x4": {
       "watertight": true,
@@ -256,8 +256,8 @@
         50.0,
         205.0
       ],
-      "volume": 75299.827,
-      "digest": "16693d51a0a7c3bcc0d2243e6162999425ac2c08bb001b1f6d9c7dfdc6bc1164"
+      "volume": 75295.528,
+      "digest": "27c9332b8a10568e538cd1068c5c423083f58071b7dc12a48f200a8aa17fd34d"
     },
     "tall_1x1x12": {
       "watertight": true,
@@ -271,8 +271,8 @@
         50.0,
         605.0
       ],
-      "volume": 207999.473,
-      "digest": "86ddec3cfe7872b838ab423db46371dc7d9949591c53c3613580eb1e74222eaa"
+      "volume": 207985.982,
+      "digest": "030719a1d632234f6824e55813bb865c64a8466088b60e31312332b02b26e477"
     },
     "wide_4x1x1": {
       "watertight": true,
@@ -286,8 +286,8 @@
         50.0,
         55.0
       ],
-      "volume": 87169.041,
-      "digest": "39b51f7b7bb3361602d3029eb7c57f8e30d673d8bb14e48461678d94ee8ae0ad"
+      "volume": 87166.862,
+      "digest": "c3122a9d03b6ad0c52fe699b1784788c424416b2654c56fa671ea6a8ef5db206"
     },
     "long_1x7x1": {
       "watertight": true,
@@ -295,14 +295,14 @@
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 1.252606270421075e-05,
+      "crossing_depth": 0.0,
       "extents": [
         50.0,
         350.0,
         55.0
       ],
-      "volume": 148800.615,
-      "digest": "296a103f94c4fc1d3a47e832d320f3509ba18848a1bb1348a07d0ab646f51dbc"
+      "volume": 148797.108,
+      "digest": "a9522cd9103887dc7cb21a524542df2be3e505b49beacb113946770c0365832b"
     },
     "wide_12x1x1": {
       "watertight": true,
@@ -310,14 +310,14 @@
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 3.0517578125e-05,
+      "crossing_depth": 1.0789593218826635e-05,
       "extents": [
         600.0,
         50.0,
         55.0
       ],
-      "volume": 251519.909,
-      "digest": "202240594d593c5a311b9d9473763825ff8f721c513bd64caa1e06e4c88fc1ca"
+      "volume": 251514.188,
+      "digest": "cabe33bc977a224e8f18f21195cd38a7c2965f163fc69156b43bb2016714c819"
     },
     "long_1x12x1": {
       "watertight": true,
@@ -325,14 +325,14 @@
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 3.0517578125e-05,
+      "crossing_depth": 0.0,
       "extents": [
         50.0,
         600.0,
         55.0
       ],
-      "volume": 251519.905,
-      "digest": "fd4c1e28e916ebe56a1d15f8a10dcb88d39adb74831b9c66755f35e829dc98b8"
+      "volume": 251514.185,
+      "digest": "3c6a4012bf15e5ae428795ed3bc7dec8c0f86a7e49d1dc81d698625bc7dc8622"
     },
     "long_mixed_2.5x7.5x1.5": {
       "watertight": true,
@@ -340,14 +340,14 @@
       "bodies": 1,
       "bad_edges": 0,
       "dup_faces": 0,
-      "crossing_depth": 1.252606270421075e-05,
+      "crossing_depth": 0.0,
       "extents": [
         125.0,
         375.0,
         80.0
       ],
-      "volume": 353485.407,
-      "digest": "d22a41a9ff2290f40d6021fe7734641adbf9e8512f62305a9c00c4045a47556e"
+      "volume": 353480.751,
+      "digest": "ec33319591b5609af4843323ceb10550c862d4b4a92bc8c285f98e16d1b392b8"
     },
     "mixed_walls_2x2x1": {
       "watertight": true,
@@ -361,8 +361,8 @@
         100.0,
         55.0
       ],
-      "volume": 78867.765,
-      "digest": "43a665b8d61c1c24d8c764261b36a6c0d2b59e0ca13039daf49a9ab76c725680"
+      "volume": 78866.316,
+      "digest": "b57fb852ce3fb93bba2224e539d0087f6db9e46b6bfc0a5344647eebc06979a1"
     },
     "simple_2x1x2": {
       "watertight": true,
@@ -376,8 +376,8 @@
         50.0,
         105.0
       ],
-      "volume": 93617.311,
-      "digest": "6b3b6b0cd90e57a933e1ac50eb34e05d82a1ab7071d02c22557a899b36a6c528"
+      "volume": 93617.29,
+      "digest": "3ebc667dea6a05e92c2880f4c978180a0b3a2c5d679c528df061f60d4724e13a"
     },
     "topless_half_2.5x1.5x1.5": {
       "watertight": true,
@@ -391,8 +391,8 @@
         75.0,
         80.0
       ],
-      "volume": 95358.915,
-      "digest": "cd0b7d762bf8b1632d248a17af8fc11ec31aa3cee35d86a6843c8baca0100097"
+      "volume": 95356.262,
+      "digest": "251874af35888d8416c18cbe57f9faa0172325b3a586d6c2c832f7424ebfa8bb"
     },
     "simple_half_1.5x2x2.5": {
       "watertight": true,
@@ -406,8 +406,8 @@
         100.0,
         130.0
       ],
-      "volume": 139830.181,
-      "digest": "63ddd6a157c9a54a6b4e8648e26ed19328c26920348003088fcda3cf00eea7d9"
+      "volume": 139830.102,
+      "digest": "770a1ea70db66f5abb789208e1e5dedab66c567e8d4948df6620ad28b70613d7"
     }
   }
 }

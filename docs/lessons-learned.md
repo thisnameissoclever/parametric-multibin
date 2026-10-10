@@ -21,6 +21,8 @@ Mistakes and near misses from building the generators, each with its cause, the 
 - [Prove a lock is repeatable before relying on it](#prove-a-lock-is-repeatable-before-relying-on-it)
 - [Make meeting faces coincide exactly or not at all](#make-meeting-faces-coincide-exactly-or-not-at-all)
 - [Read the whole diff of a scripted edit](#read-the-whole-diff-of-a-scripted-edit)
+- [Test the real steps, not only their stand-ins](#test-the-real-steps-not-only-their-stand-ins)
+- [Look past the largest difference](#look-past-the-largest-difference)
 
 ## Random sampling hides edge-shaped deviations
 
@@ -191,3 +193,23 @@ Mistakes and near misses from building the generators, each with its cause, the 
 **Rule:** after a scripted edit, read the whole diff before running anything on it, and undo a trial by restoring the file from version control.
 
 **Check:** `git diff` before each gate run lists every changed line; after a trial is undone, `git diff` shows nothing left of it.
+
+## Test the real steps, not only their stand-ins
+
+**What happened:** the shell gate's unit tests drive its whole run with stand-in steps in place of OpenSCAD and the mesh checks. A reviewer changed the real steps so that the mesh audit skipped the crossing check, the 3MF merge used one distance of its two, and every expected render message counted as seen; every unit test still passed.
+
+**Cause:** a stand-in replaces exactly the code it stands for, so no test that runs through the stand-in can see that code.
+
+**Rule:** for every stand-in, also test the real step it replaces on a small input that needs no slow tool, and move the logic out of slow steps into functions that can be tested that way.
+
+**Check:** `gate_test.py` tests the real steps' mesh checks and `regress.render_result`, which interprets OpenSCAD's output; `mutation_test.py` breaks the real steps and checks that those tests notice.
+
+## Look past the largest difference
+
+**What happened:** a reviewer found the rail channel's bulges 0.021 mm short at each end on every reference, and the side clip pockets' heads faceted 0.011 mm off. Neither showed in the gate's numbers, because the threaded holes' faceting, 0.019 mm, sets every maximum.
+
+**Cause:** the bulge's measured half length, 3.521 mm, had been rounded to 3.5. It is 8.5 tan 22.5 degrees, the half side of a regular octagon 17 mm across its flats.
+
+**Rule:** once the largest difference is explained, measure again without it and explain the next ones; and when a measurement lies close to a round number, look for the construction that gives it exactly.
+
+**Check:** `worst_points.py KEY STL N --away-from-holes` lists the worst points with the threaded holes left out, and `--below D` lists those under a known larger difference; `DEVIATIONS.md` explains every point above 0.01 mm that they show on the references.

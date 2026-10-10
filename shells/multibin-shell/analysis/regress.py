@@ -35,7 +35,8 @@ import sys
 from pathlib import Path
 
 import compare
-from compare import EXPORT_FORMAT, LIMITS, OPENSCAD, audit, clean, generate, metrics, out_for, render_problems, summary
+from compare import (EXPORT_FORMAT, LIMITS, OPENSCAD, audit, clean, generate, metrics, out_for, render_problems,
+                     summary, unsound_reasons)
 from export_check import MERGE_TOLS, coincident_3mf, merge_faults
 from refs import EXPECTED, STL_DIR, fname
 
@@ -119,10 +120,15 @@ def message_failures(label, problems, expected, seen):
             + [f"{label}: expected render message missing: {e}" for e in expected if e not in seen])
 
 
+def unsound(label, a):
+    """The failure line for an unsound mesh, naming what is wrong with it."""
+    return f"{label}: mesh not a clean single shell: {'; '.join(unsound_reasons(a))}"
+
+
 def sound_failures(name, a, was):
     """A configuration without a reference that is unsound, not in the baseline,
     or changed since the baseline was locked (was is None when relocking)."""
-    out = [] if clean(a) else [f"soundness/{name}: mesh not a clean single shell: {a}"]
+    out = [] if clean(a) else [unsound(f"soundness/{name}", a)]
     if was is None:
         return out
     if was == "absent":
@@ -176,9 +182,15 @@ def render(name, params, scad, expected=(), fmt="stl"):
     for k, v in params.items():
         args += ["-D", f"{k}={v}"]
     r = subprocess.run(args, capture_output=True, text=True, timeout=3600)
-    problems = render_problems(r.stderr, expected)
-    seen = [e for e in expected if e in r.stderr]
-    return (stl if stl.exists() else None), r.stderr[-2000:], problems, seen
+    return render_result(stl, r.stderr, expected)
+
+
+def render_result(out, stderr, expected):
+    """render()'s result for a finished OpenSCAD run: the output path, or None
+    when no file was written; the end of the console output; the render
+    messages other than expected ones; and the expected texts that appeared."""
+    return ((out if out.exists() else None), stderr[-2000:], render_problems(stderr, expected),
+            [e for e in expected if e in stderr])
 
 
 class Steps:
@@ -249,7 +261,7 @@ def run(steps, scad, update=False, accept=False, quick=False, alternate=False, l
         current[key] = m
         failures += hard_failures(key, m)
         if not clean(a):
-            failures.append(f"{key}: mesh not a clean single shell: {a}")
+            failures.append(unsound(key, a))
         was = base.get("models", {}).get(key)
         if was:
             failures += drift_failures(key, m, was)
