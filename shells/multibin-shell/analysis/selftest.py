@@ -1,15 +1,18 @@
 """Prove the regression gate works, in three steps:
 
-1. gate_test.py checks the gate's decisions at their limits and drives its
-   whole run with stand-in renders, in about a second.
+1. gate_test.py checks the gate's decisions at their limits and drives every
+   check in regress.CHECKS through the gate's run with stand-in renders, in a
+   few seconds.
 2. mutation_test.py breaks the gate one way at a time and checks that
-   gate_test.py notices each break, in about a minute.
+   gate_test.py notices each break, in a few minutes.
 3. A full run of regress.py against the known-bad fixture must fail, and must
    report each failure listed below that the fixture is known to cause.
 
 The fixture, fixtures/frozen_a6ff94e.scad, is the generator as of commit
 a6ff94e. Against the current baseline it has, among other faults:
 
+  locked generator   it is not the file the baseline and VERIFICATION.md were
+                     made from
   render messages    every render prints a nonplanar-face notice (its thread),
                      references and soundness configurations alike
   HARD               Topless rim grooves stop at the seams: 0.4 mm on O212;
@@ -32,10 +35,11 @@ a6ff94e. Against the current baseline it has, among other faults:
   rejected sizes     it builds sizes the sliders cannot produce instead of
                      stopping with an error
 
-A gate section that stopped working would drop its line from the output, so
-the self-test checks each line, not only the exit status. The fixture causes
-no fault that only the 0.0001 mm 3MF merge finds; gate_test.py shows that the
-real run applies that distance.
+A check that stopped working would drop its line from the output, so the
+self-test looks for each line, not only the exit status. The fixture cannot
+show the checks that need a missing file, a failed render, an edit during the
+run or a relock, nor a fault that only the 0.0001 mm 3MF merge finds;
+gate_test.py covers those.
 
 Usage: python selftest.py     (about 40 minutes, almost all of it step 3)
 Exits 0 when all three steps pass, 1 otherwise.
@@ -50,6 +54,7 @@ FIXTURE = HERE / "fixtures" / "frozen_a6ff94e.scad"
 
 # (gate section, text that must appear in the gate's failure list)
 EXPECTED_FAILURES = [
+    ("locked generator", "generator: the baseline was locked on another version"),
     ("reference render messages", "T111: render message: PolySet has nonplanar faces"),
     ("soundness render messages", "soundness/half_w_1.5x1x1: render message: PolySet has nonplanar faces"),
     ("HARD maximum", "O212: HARD mx="),

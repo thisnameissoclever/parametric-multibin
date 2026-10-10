@@ -92,6 +92,7 @@ The first shell generator covers the Standard Base with the Topped Rail, Topless
 - **[U2] Per-unit rail selection.** Keep the four per-side dropdowns, and add four optional text fields with one letter per LU along that side: `T` topped rail, `O` topless (open) rail, `S` simple. A blank field means the dropdown applies to the whole side. A short string pads with the dropdown's value, extra letters are ignored, and an unknown letter falls back to the dropdown with a console warning. The first version ships [U1] one dropdown per side; this follows if mixing within a side turns out to be needed.
 - **[C1] Other base types.** MultiBuild also publishes the Standard Click-In Extension, Universal Click-In Extension and Baseless Extension bases; the extensions add a Shell Position choice of Edge or Center. Each needs its own reference set.
 - **[C4] Micro and Shell Rings walls.** Not yet inspected.
+- **[C7] Render time on MakerWorld.** MakerWorld's Parametric Model Maker may stop a render that runs too long, and its limit is not known. Test the default shell there once the first version has merged. If it times out, add a faster, less exact detail option; the threaded holes dominate render time, so they are the first candidate.
 
 Decided against for now:
 

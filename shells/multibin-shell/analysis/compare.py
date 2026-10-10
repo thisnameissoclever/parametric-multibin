@@ -1,16 +1,13 @@
-"""Gate 1 harness for the shell: render the generator for each reference shell
-and measure how far the two meshes are apart.
+"""Measuring tools for the shell's gate, and a diagnostic command.
 
-Usage: python compare.py [keys...] [--report] [--clusters N]
-Default keys: every reference in refs.EXPECTED; a missing reference file is a
-failure.
---report writes VERIFICATION.md; it refuses unless every reference in
-refs.EXPECTED is present and no keys are given.
---clusters N lists the N worst deviation clusters per direction (default 10).
-Exits 1 when any reference is missing or fails the gate column of the report.
+Usage: python compare.py [keys...] [--clusters N]
+Renders the generator for the named reference shells (default: every reference
+in policy.REFERENCES) into .local-build/out/shell/KEY.stl and prints how far
+each render is from its reference, the N worst deviation clusters per
+direction (default 10) and the mesh audit.
 
-Thresholds (docs/verification-method.md): bounding box <= 0.02 mm per axis,
-volume <= 0.5 %, p99 <= 0.05 mm, maximum <= 0.2 mm.
+This command is a diagnostic: it decides nothing and always exits 0. The gate
+is regress.py, which uses the functions below and writes VERIFICATION.md.
 """
 
 import hashlib
@@ -18,14 +15,15 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import trimesh
 
+import policy
+import refs
 from export_check import crossings, load_exact, zero_area_count
-from refs import EXPECTED, STL_DIR, SIZES, WALLS, available, fname
+from refs import SIZES, fname
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools"))
 import mbpaths  # noqa: E402
@@ -34,13 +32,13 @@ ROOT = Path(__file__).resolve().parent.parent      # shells/multibin-shell
 SCAD = ROOT / "MultiBin Shell - Parametric.scad"
 OUT = mbpaths.out_dir("shell")
 OPENSCAD = mbpaths.OPENSCAD
-N_SAMPLES = 50000
-# the Gate 1 limits (docs/verification-method.md); regress.py uses these too
-LIMITS = dict(bbox=0.02, vol=0.5, p99=0.05, mx=0.2)
+# the command every render starts with; gate_test.py points it at a stand-in
+OPENSCAD_COMMAND = [OPENSCAD]
 WALL_PARAM = {"T": "topped", "O": "topless", "S": "simple"}
 
 
 def params(key):
+    """Generator parameters for a reference key."""
     x, y, z = SIZES[key[1:]]
     w = f'"{WALL_PARAM[key[0]]}"'
     return dict(width_lu=x, height_lu=y, depth_lu=z,
@@ -58,6 +56,8 @@ def out_for(scad=None):
     return d
 
 
+# ------------------------------------------------------------------ rendering
+
 # The lines OpenSCAD 2021.01 prints for every clean render: cache and timing
 # statistics and the summary of the result. Any other line, such as a WARNING,
 # an ERROR, a DEPRECATED notice, an ECHO or the nonplanar-face notice (which
@@ -69,24 +69,49 @@ NORMAL_RENDER_LINE = re.compile(
     r"|^Simple:\s+yes$|^Volumes:\s+2$")
 
 
-def render_problems(stderr, expected=()):
+def render_problems(console, expected=()):
     """Render messages in OpenSCAD's console output, except lines containing one
     of the expected texts."""
-    lines = [ln.strip() for ln in stderr.splitlines() if ln.strip()]
+    lines = [ln.strip() for ln in console.splitlines() if ln.strip()]
     return [ln for ln in lines if not NORMAL_RENDER_LINE.match(ln) and not any(e in ln for e in expected)]
 
 
-# Renders are exported as binary STL, which keeps 32-bit coordinates: about
-# 0.00007 mm at 600 mm, the largest shell. OpenSCAD's default ASCII STL keeps
-# six significant digits, 0.001 mm beyond 100 mm, and on 12 LU shells from an
-# earlier version of the generator that rounding alone pushed vertices up to
-# 0.0003 mm through neighbouring faces.
-EXPORT_FORMAT = ["--export-format", "binstl"]
+def render(command, scad, params, out, expected=()):
+    """Run OpenSCAD once and report what it did. Every render of the gate and
+    of this command goes through here.
 
-# deepest crossing between two triangles that a sound render may have: binary
-# STL rounding stays under 0.0001 mm, and overlapping solids cross far deeper
-CROSSING_LIMIT = 1e-3
+    command is the OpenSCAD command as a list of arguments. Any earlier file at
+    out is deleted first, so a render that writes nothing can never be read
+    from an older file. An STL is written in binary (policy.EXPORT_FORMAT).
+    Returns a dict: path (None when no file was written), seconds, console
+    (the end of the console output), problems (render messages other than the
+    expected texts) and seen (the expected texts that appeared)."""
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists():
+        out.unlink()
+    args = [*command, "-o", str(out), *(policy.EXPORT_FORMAT if out.suffix.lower() == ".stl" else ()), str(scad)]
+    for k, v in params.items():
+        args += ["-D", f"{k}={v}"]
+    t0 = time.time()
+    r = subprocess.run(args, capture_output=True, text=True, timeout=3600)
+    return dict(path=out if out.exists() else None, seconds=time.time() - t0, console=r.stderr[-3000:],
+                problems=render_problems(r.stderr, expected), seen=[e for e in expected if e in r.stderr])
 
+
+def openscad_version():
+    r = subprocess.run([OPENSCAD, "--version"], capture_output=True, text=True)
+    return (r.stdout + r.stderr).strip()
+
+
+def scad_digest(path=None):
+    """SHA-256 of the generator (or of the SCAD file at path) with Unix line
+    endings, as git stores it, so the digest matches
+    `git show <commit>:<path> | sha256sum` on any machine."""
+    return hashlib.sha256(Path(path or SCAD).read_bytes().replace(b"\r\n", b"\n")).hexdigest().upper()
+
+
+# ------------------------------------------------------------------ mesh audit
 
 def zero_area_triangles(stl):
     """Triangles whose corners lie on one line, as exported (see export_check)."""
@@ -108,12 +133,12 @@ def audit(stl):
     counted through shared edges, so two solids touching at one vertex are two."""
     v, f = load_exact(stl)
     m = trimesh.Trimesh(v, f, process=False)
-    _, c = np.unique(np.sort(m.edges, axis=1), axis=0, return_counts=True)
-    _, counts = np.unique(np.sort(f, axis=1), axis=0, return_counts=True)
+    _, per_edge = np.unique(np.sort(m.edges, axis=1), axis=0, return_counts=True)
+    _, per_face = np.unique(np.sort(f, axis=1), axis=0, return_counts=True)
     bodies = len(trimesh.graph.connected_components(m.face_adjacency, nodes=np.arange(len(f)), min_len=1))
     _, deepest = crossings(v, f)
     return dict(watertight=bool(m.is_watertight), winding=bool(m.is_winding_consistent), bodies=int(bodies),
-                bad_edges=int((c != 2).sum()), dup_faces=int((counts > 1).sum()),
+                bad_edges=int((per_edge != 2).sum()), dup_faces=int((per_face > 1).sum()),
                 crossing_depth=float(deepest),
                 extents=[round(float(x), 4) for x in m.extents], volume=round(float(m.volume), 3),
                 digest=geometry_digest(v))
@@ -123,7 +148,8 @@ def clean(a):
     """Watertight, consistently wound with positive volume, one body, every edge
     shared by exactly two faces, no duplicated facets, no deep crossings."""
     return (a["watertight"] and a["winding"] and a["volume"] > 0 and a["bodies"] == 1
-            and a["bad_edges"] == 0 and a["dup_faces"] == 0 and a["crossing_depth"] <= CROSSING_LIMIT)
+            and a["bad_edges"] == 0 and a["dup_faces"] == 0
+            and a["crossing_depth"] <= policy.CROSSING_LIMIT)
 
 
 def unsound_reasons(a):
@@ -141,30 +167,12 @@ def unsound_reasons(a):
         out.append(f"{a['bad_edges']} edges not shared by exactly two faces")
     if a["dup_faces"]:
         out.append(f"{a['dup_faces']} duplicated facets")
-    if not a["crossing_depth"] <= CROSSING_LIMIT:
+    if not a["crossing_depth"] <= policy.CROSSING_LIMIT:
         out.append(f"triangles crossing {a['crossing_depth']:.2g} mm deep")
     return out
 
 
-def generate(key, scad=None):
-    """Render a reference configuration; returns (path or None, seconds, problems)."""
-    out = out_for(scad) / f"{key}.stl"
-    args = [OPENSCAD, "-o", str(out), *EXPORT_FORMAT, str(scad or SCAD)]
-    for k, v in params(key).items():
-        args += ["-D", f"{k}={v}"]
-    t0 = time.time()
-    if out.exists():
-        out.unlink()
-    r = subprocess.run(args, capture_output=True, text=True, timeout=3600)
-    secs = time.time() - t0
-    problems = render_problems(r.stderr)
-    for line in problems:
-        print(f"[{key}] scad: {line}")
-    if not out.exists():
-        print(f"[{key}] GENERATION FAILED\n{r.stderr[-3000:]}")
-        return None, secs, problems
-    return out, secs, problems
-
+# ------------------------------------------------------------------ measuring
 
 def clusters(pts, dist, limit, cell=3.0):
     """Worst deviation per cell of a coarse grid, largest first."""
@@ -176,11 +184,14 @@ def clusters(pts, dist, limit, cell=3.0):
     return sorted(best.values(), key=lambda t: -t[1])[:limit]
 
 
-def measure(ref, gen, n_samples=N_SAMPLES):
+def measure(ref, gen, n_samples=None):
     """Gate 1 measures between two meshes, gen moved so the bounding-box minimum
-    corners coincide. Returns (row, spots): row has bbox, vol and, per direction,
-    the sampled mean, p95, p99 and max and the all-vertices max (vmax); spots
-    has each direction's points and distances, for locating the worst ones."""
+    corners coincide. Returns (row, spots): row has bbox, vol, samples (the
+    number of surface points sampled per direction, policy.N_SAMPLES unless
+    given) and, per direction, the sampled mean, p95, p99 and max and the
+    all-vertices max (vmax); spots has each direction's points and distances,
+    for locating the worst ones."""
+    n_samples = policy.N_SAMPLES if n_samples is None else n_samples
     gen = gen.copy()
     gen.apply_translation(ref.bounds[0] - gen.bounds[0])
     row = dict(bbox=float(np.abs(ref.extents - gen.extents).max()),
@@ -193,6 +204,7 @@ def measure(ref, gen, n_samples=N_SAMPLES):
         q = np.quantile(dist, [0.95, 0.99])
         row[tag] = dict(mean=float(dist.mean()), p95=float(q[0]), p99=float(q[1]), mx=float(dist.max()),
                         vmax=float(vdist.max()))
+        row["samples"] = int(len(pts))
         spots[tag] = (np.vstack([pts, a.vertices]), np.concatenate([dist, vdist]))
     return row, spots
 
@@ -207,7 +219,8 @@ def summary(row):
 
 
 def metrics(key, gen_path, n_clusters=10):
-    ref = trimesh.load_mesh(STL_DIR / fname(key))
+    """Measure a render against its reference and print the result; returns the row."""
+    ref = trimesh.load_mesh(refs.STL_DIR / fname(key))
     gen = trimesh.load_mesh(gen_path)
     row, spots = measure(ref, gen)
     row["key"] = key
@@ -231,137 +244,27 @@ def metrics(key, gen_path, n_clusters=10):
     return row
 
 
-def openscad_version():
-    r = subprocess.run([OPENSCAD, "--version"], capture_output=True, text=True)
-    return (r.stdout + r.stderr).strip()
-
-
-def scad_digest(path=None):
-    """SHA-256 of the generator (or of the SCAD file at path) with LF line
-    endings, as git stores it, so the digest matches
-    `git show <commit>:<path> | sha256sum` on any machine."""
-    return hashlib.sha256(Path(path or SCAD).read_bytes().replace(b"\r\n", b"\n")).hexdigest().upper()
-
-
-def report_refusal(missing, n_rows, digest_start, digest_end):
-    """Why VERIFICATION.md must not be written, or None. The digest is taken at
-    the start and the end of the run, so a report cannot credit renders of one
-    version of the generator to another."""
-    if missing or n_rows != len(EXPECTED):
-        return "a reference is missing or failed to render"
-    if digest_end != digest_start:
-        return "the generator changed during the run"
-    return None
-
-
-def gate(r, problems, sound):
-    """PASS only when every limit is met, the mesh is sound and the render
-    printed nothing beyond OpenSCAD's normal statistics."""
-    s = summary(r)
-    ok = all(s[k] <= LIMITS[k] for k in LIMITS) and sound[r["key"]] and not problems[r["key"]]   # NaN fails
-    return "PASS" if ok else "FAIL"
-
-
-def report(rows, timings, problems, sound, started, digest):
-    lines = [
-        "# VERIFICATION - shell Gate 1 mechanical match",
-        "",
-        f"Harness: `analysis/compare.py`, run from {started.strftime('%Y-%m-%d %H:%M')} to "
-        f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}, "
-        f"{N_SAMPLES} surface samples per direction per model, bounding-box aligned, "
-        f"plus a sweep of every vertex in both directions.",
-        "",
-        f"File verified: `{SCAD.name}`, SHA-256 {digest}, computed with LF line endings as git "
-        f"stores the file (`git show <commit>:\"shells/multibin-shell/{SCAD.name}\" | sha256sum`).",
-        "",
-        f"Renderer: {openscad_version()}.",
-        "",
-        "Columns: bbox dmax is the largest difference between the two bounding boxes on any axis; vol delta "
-        "is the volume difference as a percentage of the reference's; p99 is the 99th percentile of the "
-        "distances from sampled surface points to the other mesh, in whichever direction (reference to "
-        "render, or render to reference) is worse; sampled max is the largest of those distances; and "
-        "all-vertices max is the largest distance from any vertex of either mesh to the other.",
-        "",
-        f"Thresholds (`docs/verification-method.md`): bounding box <= {LIMITS['bbox']} mm per axis, volume <= "
-        f"{LIMITS['vol']} %, p99 <= {LIMITS['p99']} mm, maximum <= {LIMITS['mx']} mm. The sound column means "
-        "watertight and consistently wound with positive volume, one body (counted through shared edges), every "
-        "edge shared by exactly two faces, no duplicated facets, and no two triangles that share at most one "
-        f"vertex crossing by more than {CROSSING_LIMIT:g} mm. The gate column is PASS only when every limit is "
-        "met, the mesh is sound and the render printed nothing beyond OpenSCAD's normal statistics.",
-        "",
-        "A feature smaller than the 0.2 mm maximum, such as a 0.2 mm opening chamfer or a 0.1 mm slit, could be "
-        "missing without failing these limits; the regression gate (`analysis/regress.py`) holds every reference "
-        "to its locked worst point within 0.002 mm, which catches that. A feature moved by less than the "
-        "worst point, which is at the threaded holes, leaves the maximum unchanged: it shows in the p99 or "
-        "volume column only when it covers enough surface, as the rail channel's bulges do, and a small feature "
-        "moved that little can leave every column unchanged. The regression gate's soundness section catches any "
-        "such move through its vertex digests; this report and `regress.py --quick` catch it only through p99 "
-        "or volume.",
-        "",
-        "The sampled columns can differ between runs, p99 in the fourth decimal and the sampled maximum in the "
-        "third, because OpenSCAD does not write its triangles in a fixed order, so the sample points differ; the "
-        "bounding box, volume and all-vertices columns repeat.",
-        "",
-        "| model | bbox dmax (mm) | vol delta (%) | p99 (worse dir) | sampled max | all-vertices max | sound | render (s) | gate |",
-        "|---|---|---|---|---|---|---|---|---|",
-    ]
-    for r in rows:
-        mx = max(r["ref->gen"]["mx"], r["gen->ref"]["mx"])
-        vmx = max(r["ref->gen"]["vmax"], r["gen->ref"]["vmax"])
-        p99 = max(r["ref->gen"]["p99"], r["gen->ref"]["p99"])
-        lines.append(f"| {r['key']} | {r['bbox']:.4f} | {r['vol']:.3f} | {p99:.4f} | {mx:.4f} | "
-                     f"{vmx:.4f} | {'yes' if sound[r['key']] else 'NO'} | {timings[r['key']]:.0f} | "
-                     f"{gate(r, problems, sound)} |")
-    lines += [""]
-    noisy = {k: v for k, v in problems.items() if v}
-    if noisy:
-        lines += ["Render messages:", ""] + [f"- {k}: {m}" for k, v in noisy.items() for m in v] + [""]
-    else:
-        lines += ["Every render printed nothing beyond OpenSCAD's normal statistics.", ""]
-    (ROOT / "VERIFICATION.md").write_text("\n".join(lines), encoding="utf-8")
-    print("wrote VERIFICATION.md")
-
-
 def main():
     args = sys.argv[1:]
     n_clusters = 10
     if "--clusters" in args:
         n_clusters = int(args[args.index("--clusters") + 1])
-    named = [a for a in args if not a.startswith("--") and not a.isdigit()]
-    if "--report" in args:
-        missing = [k for k in EXPECTED if k not in available()]
-        if named or missing:
-            print("refusing --report: it needs every reference in refs.EXPECTED and no named keys; "
-                  f"missing: {missing or 'none'}")
-            return 2
-        started, digest = datetime.now(timezone.utc), scad_digest()
-    keys = named or EXPECTED
-    missing = [k for k in keys if not (STL_DIR / fname(k)).is_file()]
-    for k in missing:
-        print(f"[{k}] MISSING reference file: {fname(k)}")
-    keys = [k for k in keys if k not in missing]
-    rows, timings, problems, sound = [], {}, {}, {}
+    keys = [a for a in args if not a.startswith("--") and not a.isdigit()] or list(policy.REFERENCES)
     for k in keys:
-        p, secs, problems[k] = generate(k)
-        timings[k] = secs
-        print(f"[{k}] rendered in {secs:.1f} s")
-        if p:
-            rows.append(metrics(k, p, n_clusters))
-            sound[k] = clean(audit(p))
-            if not sound[k]:
-                print(f"[{k}] mesh not a clean single shell: {'; '.join(unsound_reasons(audit(p)))}")
-            print(f"[{k}] zero-area triangles in the export: {zero_area_triangles(p)}")
-        print()
-    if "--report" in args:
-        reason = report_refusal(missing, len(rows), digest, scad_digest())
-        if reason:
-            print(f"not writing VERIFICATION.md: {reason}")
-            return 1
-        report(rows, timings, problems, sound, started, digest)
-    failed = missing + [k for k in keys if k not in sound] + [r["key"] for r in rows if gate(r, problems, sound) != "PASS"]
-    if failed:
-        print(f"FAIL: {', '.join(failed)}")
-        return 1
+        if not (refs.STL_DIR / fname(k)).is_file():
+            print(f"[{k}] MISSING reference file: {fname(k)}\n")
+            continue
+        r = render(OPENSCAD_COMMAND, SCAD, params(k), OUT / f"{k}.stl")
+        print(f"[{k}] rendered in {r['seconds']:.1f} s")
+        for line in r["problems"]:
+            print(f"[{k}] render message: {line}")
+        if r["path"] is None:
+            print(f"[{k}] RENDER FAILED\n{r['console']}\n")
+            continue
+        metrics(k, r["path"], n_clusters)
+        a = audit(r["path"])
+        print(f"[{k}] mesh: {'sound' if clean(a) else '; '.join(unsound_reasons(a))}; "
+              f"zero-area triangles in the export: {zero_area_triangles(r['path'])}\n")
     return 0
 
 

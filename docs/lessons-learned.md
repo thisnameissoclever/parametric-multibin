@@ -24,6 +24,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 - [Test the real steps, not only their stand-ins](#test-the-real-steps-not-only-their-stand-ins)
 - [Look past the largest difference](#look-past-the-largest-difference)
 - [A mutation test needs passing tests to start from](#a-mutation-test-needs-passing-tests-to-start-from)
+- [Give a review a severity scale and a closed scope](#give-a-review-a-severity-scale-and-a-closed-scope)
 
 ## Random sampling hides edge-shaped deviations
 
@@ -153,7 +154,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** keep each gate decision in a small function and test it at its limit, just under and just over; and for configurations without a reference, lock an exact digest of the geometry rather than a few measures of it.
 
-**Check:** the shell's `analysis/gate_test.py` runs in about a second and tests each decision at its limit and the gate's whole run with stand-in renders; `analysis/mutation_test.py` breaks the gate one way at a time to show those tests notice, and `selftest.py` runs both before the end-to-end run against the fixture.
+**Check:** `gate_test.py`, `mutation_test.py` and `selftest.py` in the shell's `analysis` folder; `docs/verification-method.md` says what each proves.
 
 ## Measure geometry at full export precision
 
@@ -163,7 +164,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** render for measurement with `--export-format binstl`, which keeps 32-bit coordinates, and set geometric limits above that format's rounding at the largest size the generator makes.
 
-**Check:** `EXPORT_FORMAT` in the shell's `analysis/compare.py`; `gate_test.py` checks its value.
+**Check:** `EXPORT_FORMAT` in the shell's `analysis/policy.py`; `test_policy` and `test_render` in `gate_test.py`.
 
 ## Prove a lock is repeatable before relying on it
 
@@ -203,7 +204,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** for every stand-in, also test the real step it replaces on a small input that needs no slow tool, and move the logic out of slow steps into functions that can be tested that way.
 
-**Check:** `gate_test.py`'s `test_real_steps` and its tests of `regress.render_result`, which interprets OpenSCAD's output; `mutation_test.py`.
+**Check:** `test_render` and `test_real_steps` in the shell's `gate_test.py`; the entries marked `tools` in `mutation_test.py`.
 
 ## Look past the largest difference
 
@@ -224,3 +225,13 @@ Mistakes and near misses from building the generators, each with its cause, the 
 **Rule:** run the tests once without any mutation and stop if they fail; count a mutation as caught only against a passing start.
 
 **Check:** `mutation_test.py` runs `gate_test.py` on an unmutated copy first and exits 1, without testing any mutation, if that run fails.
+
+## Give a review a severity scale and a closed scope
+
+**What happened:** four rounds in a row, the reviewer auditing the shell's records and gate found a new set of small problems after the previous set had been fixed. Each fix added tests, numbers and text, and four of one round's ten findings were in material that the two fixes before it had added. The generator itself had not changed.
+
+**Cause:** the reviewer's brief asked for every false statement and every way the gate could pass a broken generator, with no severity scale, and any finding made a round unclean. The gate's tests chased each way its code could be broken, one at a time, so each fix closed one case and left its class open.
+
+**Rule:** grade every finding as blocking, to fix, or to log, and let only a blocking finding restart a review. Say what is signed off and review that. Give a gate a closed list of checks, each with a test, and treat a new check as a decision. Answer a finding by removing its class, or the claim, before adding a test or a number.
+
+**Check:** the severity rule and the list of checks in `docs/verification-method.md`; `regress.CHECKS`; `gate_test.py` fails if a check has no test, and `mutation_test.py` fails if a check has no mutation.

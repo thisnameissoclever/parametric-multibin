@@ -126,8 +126,8 @@ hole_cone = 3.8;                 // entry cone radius at z = 0 (45 degrees)
 // Cells along each axis as [centre, width]: whole 50 mm cells from the origin,
 // then one 25 mm cell when the size ends in a half LU. MultiBuild publishes no
 // half-LU sizes, so the half cell is this generator's own rule: a narrower pad
-// (see half_pad) and no rail channel or catch slots on its stretch of wall,
-// which do not fit in it.
+// (see half_pad), no rail channel on its stretch of wall, which is too short
+// for one, and a catch slot at the corner where it ends (see inner_recesses).
 nxf = floor(NX + eps);
 nyf = floor(NY + eps);
 cols = concat([for (i = [0:1:nxf - 1]) [U * i, U]], NX - nxf > eps ? [[U * nxf - U/4, U/2]] : []);
@@ -420,6 +420,20 @@ module inner_recesses() {
             catch_slot(catch_z0);
             for (zb = zbands) catch_slot(zb - catch_up);
         }
+        // The outermost catch slot of a whole cell ends where the flat inner face
+        // ends, so every inner corner of a published shell has one. A half cell
+        // has no centre to place slots from, so the corner at its end gets a slot
+        // of the same length ending at the same place. A side shorter than 1 LU
+        // is a half cell alone: its two corner slots would overlap, so they are
+        // one recess along the whole flat face. Each is placed at its own
+        // midpoint because the back and left face frames run backwards.
+        fl = f[5] / 2 - wall - c_in;                    // half length of the flat inner face
+        cl = catch_t1 - catch_t0;
+        corner = f[1] == 0 ? [f[4] - fl, f[4] + fl]
+               : len(f[3]) > f[1] ? [f[4] + fl - cl, f[4] + fl] : [];
+        if (len(corner) == 2) place_inner(f[0], (corner[0] + corner[1]) / 2)
+            for (z = concat([catch_z0], [for (zb = zbands) zb - catch_up]))
+                wall_recess(z, -(corner[1] - corner[0]) / 2, (corner[1] - corner[0]) / 2);
         // seam grooves between LUs along the face, one per 50 mm band (a partial
         // top band included), each ending 7 mm below the top of its band. On a
         // simple wall the groove in a partial top band is short, starting at the
@@ -431,9 +445,7 @@ module inner_recesses() {
         // a groove along the whole flat inner face at the rim, except that an open
         // (topless) rail wall leaves it out behind each rail channel. rim lists
         // the groove's segments as start, end pairs along the face; each segment
-        // is placed at its own midpoint because the back and left face frames
-        // run backwards.
-        fl = f[5] / 2 - wall - c_in;
+        // is placed at its own midpoint, as the corner catch slots are.
         rim = f[2] == "topless"
             ? concat([f[4] - fl], [for (k = [0:1:f[1] - 1]) each [U * k - catch_t0, U * k + catch_t0]], [f[4] + fl])
             : [f[4] - fl, f[4] + fl];

@@ -30,9 +30,7 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 
-# merge distances for the 3MF check: 10 and 100 times the 0.000001 mm step of
-# the coordinates OpenSCAD writes into a 3MF file
-MERGE_TOLS = (1e-5, 1e-4)
+import policy
 
 
 def load_exact(path):
@@ -57,7 +55,7 @@ def segment_crosses(p0, p1, a, b, c, tol=1e-10):
     w = inv * np.einsum("ij,ij->i", d, q)
     t = inv * np.einsum("ij,ij->i", e2, q)
     hit = p0 + t[:, None] * d
-    corner = np.min([np.linalg.norm(hit - x, axis=1) for x in (a, b, c)], axis=0) < 1e-7
+    corner = np.min([np.linalg.norm(hit - x, axis=1) for x in (a, b, c)], axis=0) < policy.CORNER_TOL
     return ok & (u > -tol) & (w > -tol) & (u + w < 1 + tol) & (t > tol) & (t < 1 - tol) & ~corner
 
 
@@ -144,7 +142,7 @@ def merge_faults(path, tol):
 def check(path):
     if str(path).lower().endswith(".3mf"):
         merged = "; ".join(f"merged within {tol:g} mm, {merge_faults(path, tol)} edges not shared by two triangles"
-                           for tol in MERGE_TOLS)
+                           for tol in policy.MERGE_TOLS)
         print(f"{path}: {coincident_3mf(path)} groups of separate vertices at identical coordinates; {merged}")
         return
     v, f = load_exact(path)

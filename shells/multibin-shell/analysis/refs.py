@@ -12,6 +12,8 @@ from pathlib import Path
 
 import numpy as np
 
+import policy
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools"))
 import mbpaths  # noqa: E402
 
@@ -26,10 +28,8 @@ SIZES = {
 }
 
 # every reference shell the verification expects (MultiBuild publishes 3x1x3
-# and 3x1x3.5 only with Topped Rail walls)
-EXPECTED = ["T111", "T212", "T313", "T3135", "T323", "T1215",
-            "O111", "O212", "O323", "O1215",
-            "S111", "S212", "S323", "S1215"]
+# and 3x1x3.5 only with Topped Rail walls); the list itself is in policy.py
+EXPECTED = list(policy.REFERENCES)
 
 
 def fname(key):
