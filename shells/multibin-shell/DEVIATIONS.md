@@ -16,6 +16,7 @@ Entries starting with M are measured surface differences, Q entries are quirks o
 - [P1. Half-LU cells](#p1-half-lu-cells)
 - [P2. A different wall kind on each side](#p2-a-different-wall-kind-on-each-side)
 - [P3. Sizes beyond the published shells](#p3-sizes-beyond-the-published-shells)
+- [P4. Which floor gap runs unbroken](#p4-which-floor-gap-runs-unbroken)
 
 ## M1. Faceting of round features, up to 0.019 mm
 
@@ -90,10 +91,18 @@ MultiBuild publishes each shell with one wall kind on all four sides. The genera
 
 ## P3. Sizes beyond the published shells
 
-The generator accepts 1 to 12 LU of width (`width_lu`), 0.5 to 12 LU front to back (`height_lu`) and 1 to 12 LU of height as printed (`depth_lu`), in half-LU steps, to match the drawer generator. Every feature repeats on a fixed pitch: pads, channels, catch slots and seam features per 50 mm cell; catch slot rows and seam grooves per 50 mm band of height; and channel bulges every 25 mm of height. The reference shells reach 3 LU wide, 2 LU front to back and 3.5 LU tall.
+The generator accepts 1 to 12 LU of width (`width_lu`), 0.5 to 12 LU front to back (`height_lu`) and a drawer depth of 1 to 12 LU (`depth_lu`), in half-LU steps, to match the drawer generator. The drawer depth sets the shell's height as printed, at 50 mm per LU plus 5 mm. The features repeat on a fixed pitch: pads, channels, catch slots and seam features per 50 mm cell; one catch slot row and one seam groove per 50 mm band of height; and channel bulges every 25 mm of height. The lowest catch slot row, the rim groove and the slot at each corner occur once. The reference shells reach 3 LU wide, 2 LU front to back and a drawer depth of 3.5 LU.
 
 - **A shell 0.5 LU front to back** has no whole cell along its left and right walls, so they carry no channel, and all its pads are half pads. A Topped Rail or Topless Rail choice for those walls builds the same wall as Simple, and the generator prints a `NOTE` in OpenSCAD's console saying so; MakerWorld's Parametric Model Maker may not show that console.
 - **Other sizes are rejected.** A value off the half-LU step, outside the range, or not a number stops the render with an error naming the parameter and the allowed values. A value within 0.0000005 LU of a half step counts as that step, to absorb rounding in the number passed in; the error shows a rejected value to six significant digits. The shell is built only from 25 mm and 50 mm cells, so it cannot take an off-step size as given, and the drawer generator builds a drawer at any off-step size, so a shell rounded to another size would not match the drawer made with the same numbers.
 - **Render time** grows with the number of cells and the height; `VERIFICATION.md` records it for each reference. Observed 2026-10-09 with the generator at commit 19f1615 and OpenSCAD 2021.01, on a Windows 11 desktop with 24 logical processors running other renders at the same time: a 6 x 6 x 1 shell took 1629 s to render and write both an STL and a 3MF, 698 s of it writing the 3MF. MakerWorld's Parametric Model Maker may stop a render that runs too long; its limit is not known here, and `docs/roadmap.md` lists testing it.
 
-**Check.** The gate renders 4 LU and 12 LU wide shells, 4 LU and 12 LU tall shells, 7, 7.5 and 12 LU front-to-back shells and a shell 0.5 LU front to back, and requires three values the sliders cannot produce (1.3, 0 and 12.5) to stop the render with their errors.
+**Check.** The gate renders 4 LU and 12 LU wide shells, shells with a drawer depth of 4 LU and 12 LU, 7, 7.5 and 12 LU front-to-back shells and a shell 0.5 LU front to back. For each of the three sizes it requires a value just off a step, a value halfway between two steps, the step below the slider's minimum and the step above its maximum to stop the render with their errors, and likewise a width that is not a number.
+
+## P4. Which floor gap runs unbroken
+
+Between neighbouring pads the floor's underside steps up by 0.2 mm in a narrow gap. On the 3 x 2 x 3 references, the only ones with pads side by side in both directions, the gap between the two rows runs unbroken along the width, through the crossings, and the gaps between columns run only beside each pad's flat side, so they stop short of the crossings. Those shells are 3 LU wide and 2 LU front to back, so "the gap between rows runs unbroken" and "the gap along the longer side runs unbroken" describe them equally.
+
+**Rule.** The generator runs the gap between rows unbroken at every size. The two readings differ only on a shell with at least two pads each way that is longer front to back than it is wide, and there by a 0.2 mm step on the underside of the floor.
+
+**Check.** After `python compare.py T323`, the 3 x 2 x 3 Topped Rail render matches its reference within the limits; the gate locks the shape of a shell 2.5 LU wide and 7.5 LU front to back.

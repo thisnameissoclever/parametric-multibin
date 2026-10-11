@@ -1,6 +1,7 @@
-"""A stand-in for OpenSCAD, so gate_test.py can test compare.render without it.
+"""A stand-in for OpenSCAD, so gate_test.py can test the render steps without it.
 
-It accepts OpenSCAD's arguments and does three things:
+Called with --version, it prints a version line to standard error, as
+OpenSCAD does. Otherwise it accepts OpenSCAD's arguments and does three things:
   - writes them, as a JSON list, beside the output file as OUTPUT.args.json;
   - writes the output file, unless the environment variable STUB_WRITE is 0;
   - prints the contents of the file named by STUB_CONSOLE, if set, to standard
@@ -14,6 +15,9 @@ import sys
 
 def main():
     args = sys.argv[1:]
+    if "--version" in args:
+        sys.stderr.write("OpenSCAD version 0.0 (stand-in)\n")
+        return
     out = args[args.index("-o") + 1]
     with open(out + ".args.json", "w", encoding="utf-8") as f:
         json.dump(args, f)

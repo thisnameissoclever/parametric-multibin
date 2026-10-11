@@ -25,6 +25,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 - [Look past the largest difference](#look-past-the-largest-difference)
 - [A mutation test needs passing tests to start from](#a-mutation-test-needs-passing-tests-to-start-from)
 - [Give a review a severity scale and a closed scope](#give-a-review-a-severity-scale-and-a-closed-scope)
+- [Test a refusal with every override switched on](#test-a-refusal-with-every-override-switched-on)
 
 ## Random sampling hides edge-shaped deviations
 
@@ -202,9 +203,9 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Cause:** a stand-in replaces exactly the code it stands for, so no test that runs through the stand-in can see that code.
 
-**Rule:** for every stand-in, also test the real step it replaces on a small input that needs no slow tool, and move the logic out of slow steps into functions that can be tested that way.
+**Rule:** for every stand-in, also test the real step it replaces on a small input that needs no slow tool, and move the logic out of slow steps into functions that can be tested that way. Make each stand-in record the arguments it is given and check them, or the code that calls it can pass the wrong file or parameters unnoticed.
 
-**Check:** `test_render` and `test_real_steps` in the shell's `gate_test.py`; the entries marked `tools` in `mutation_test.py`.
+**Check:** `test_render` and `test_real_steps` in the shell's `gate_test.py`; the mutations in `mutation_test.py` whose descriptions begin "the real"; the test "a clean run renders, digests and reads the Customizer of the SCAD file it was given, and no other".
 
 ## Look past the largest difference
 
@@ -235,3 +236,13 @@ Mistakes and near misses from building the generators, each with its cause, the 
 **Rule:** grade every finding as blocking, to fix, or to log, and let only a blocking finding restart a review. Say what is signed off and review that. Give a gate a closed list of checks, each with a test, and treat a new check as a decision. Answer a finding by removing its class, or the claim, before adding a test or a number.
 
 **Check:** the severity rule and the list of checks in `docs/verification-method.md`; `regress.CHECKS`; `gate_test.py` fails if a check has no test, and `mutation_test.py` fails if a check has no mutation.
+
+## Test a refusal with every override switched on
+
+**What happened:** the shell's gate never relocks its baseline while a reference file is missing. Its tests relocked with a reference missing and saw the refusal, but without `--accept-drift`, where a second rule also refuses because a locked reference is being dropped. With `--accept-drift` only one line stood between a missing file and a baseline locked without it, and no test ran that line: replacing it left every test passing. A sweep that changed one operator or dropped one statement at a time found it; the hand-picked mutations had not.
+
+**Cause:** the test reached the refusal through two rules at once, so it could not show which rule did the work.
+
+**Rule:** test each rule that says "never" with every flag that relaxes the other rules switched on, so that only the rule under test can cause the refusal.
+
+**Check:** the test "a relock never skips a missing reference file, even with --accept-drift" in the shell's `gate_test.py`, and the mutation "a relock skips a missing reference file" in `mutation_test.py`.

@@ -40,7 +40,7 @@ def load_exact(path):
     return v, inv.reshape(-1, 3)
 
 
-def segment_crosses(p0, p1, a, b, c, tol=1e-10):
+def segment_crosses(p0, p1, a, b, c, tol=policy.BARY_TOL):
     """Whether each segment p0 -> p1 passes through triangle abc, its inside or
     its edges, at a point strictly inside the segment and away from the
     triangle's corners. A segment lying in the triangle's plane is not tested."""

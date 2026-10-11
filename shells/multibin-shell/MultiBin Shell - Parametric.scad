@@ -1,19 +1,22 @@
 // MultiBin Shell - parametric remake
-// Rebuilds MultiBoard's MultiBin shells (Standard Base) from measurements, so
-// matching sizes reproduce the published shells and every other size follows
-// the same rules. Paste this whole file into MakerWorld's Parametric Model Maker.
+// Rebuilds MultiBuild's MultiBin shells (Standard Base) from measurements, so
+// matching sizes reproduce the published shells. Other sizes follow the same
+// rules, with a rule of this generator's own for a width or front-to-back size
+// that ends in a half LU. Paste this whole file into MakerWorld's Parametric
+// Model Maker.
 //
 // Print orientation: the base is on the build plate and the opening is on top.
-// X = width, Y = front to back on the plate, Z = up. The first 50 mm cell is
-// centred on the origin. A drawer made with the same three numbers fits inside:
-// the drawer's height runs along Y and its depth along Z.
+// X = width, Y = front to back on the plate, Z = up. The left and front outer
+// faces are at x = -25 and y = -25, so a whole first cell is centred on the
+// origin. A drawer made with the same three numbers fits inside: the drawer's
+// height runs along Y and its depth along Z.
 
 /* [Size (LU, the same numbers as the drawer that goes inside)] */
-// Width in LU (X)
+// Width in LU (X). A half LU adds a 25 mm cell with no central base pocket
 width_lu = 2; // [1:0.5:12]
-// Drawer height in LU: the shell's front-to-back size on the build plate (Y)
+// Drawer height in LU: the shell's front-to-back size on the build plate (Y). A half LU adds a 25 mm cell with no central base pocket
 height_lu = 1; // [0.5:0.5:12]
-// Drawer depth in LU: the shell's height as printed, base to opening (Z)
+// Drawer depth in LU, along the shell's height as printed (Z). The shell is 50 mm per LU plus 5 mm tall
 depth_lu = 2; // [1:0.5:12]
 
 /* [Walls (front faces the front of the build plate)] */
@@ -125,9 +128,10 @@ hole_cone = 3.8;                 // entry cone radius at z = 0 (45 degrees)
 
 // Cells along each axis as [centre, width]: whole 50 mm cells from the origin,
 // then one 25 mm cell when the size ends in a half LU. MultiBuild publishes no
-// half-LU sizes, so the half cell is this generator's own rule: a narrower pad
-// (see half_pad), no rail channel on its stretch of wall, which is too short
-// for one, and a catch slot at the corner where it ends (see inner_recesses).
+// shell whose width or front-to-back size ends in a half LU, so the half cell
+// is this generator's own rule: a narrower pad (see half_pad), no rail channel
+// on its stretch of wall, which is too short for one, and a catch slot at the
+// corner where it ends (see inner_recesses).
 nxf = floor(NX + eps);
 nyf = floor(NY + eps);
 cols = concat([for (i = [0:1:nxf - 1]) [U * i, U]], NX - nxf > eps ? [[U * nxf - U/4, U/2]] : []);

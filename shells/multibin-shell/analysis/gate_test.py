@@ -1,14 +1,25 @@
-"""Unit tests for the shell's regression gate, run in seconds without OpenSCAD.
+"""Unit tests for the shell's regression gate. They run in seconds and never
+start OpenSCAD, though the tools they import need OpenSCAD's path and the
+reference folder configured.
 
-- The policy (every limit and list the gate decides by) is compared with a
-  literal copy, so no value changes without this file changing.
-- Every decision is tested at its boundary.
-- The mesh tools run on small synthetic meshes written to
-  .local-build/out/shell/gate_test/.
+- The policy (the limits and lists docs/verification-method.md names) is
+  compared with a literal copy, so no value changes without this file changing.
+- The hard limits, the drift tolerances, the shape lock's volume tolerance, the
+  crossing limit, the sample count and the 3MF counts are tested at their
+  boundaries, and each 3MF merge distance at 0.999 and 1.001 of it.
+- The mesh tools run on small synthetic meshes.
 - The one render function runs against a stand-in for OpenSCAD.
 - Every check in regress.CHECKS is driven through regress.run() with stand-in
-  steps, and a clean run is checked to have rendered and examined everything
-  the policy lists. The real steps are tested separately on small inputs.
+  steps. The stand-ins record the arguments they are given, and a clean run is
+  checked to have rendered, measured and examined exactly what the policy
+  lists, from the SCAD file it was given, with the right output files and
+  parameters.
+- The real steps, the files they read and write and the command line are
+  tested separately on small inputs.
+
+Each run works in its own folders, .local-build/out/shell/gate_test/run_<pid>
+and .local-build/out/shell/alt/other_<pid>, and removes them at the end, so two
+runs at once do not share files.
 
 Usage: python gate_test.py     (exits 1 if any test fails)
 """
@@ -18,6 +29,8 @@ import hashlib
 import io
 import json
 import os
+import re
+import shutil
 import sys
 import zipfile
 from pathlib import Path
@@ -33,7 +46,8 @@ import regress
 from policy import REFERENCES, THREEMF_CHECK
 
 HERE = Path(__file__).resolve().parent
-TMP = compare.OUT / "gate_test"
+TMP = compare.OUT / "gate_test" / f"run_{os.getpid()}"
+OTHER_SCAD = TMP / f"other_{os.getpid()}.scad"          # a SCAD file that is not the generator
 REF = REFERENCES[0]
 CONF = "half_w_1.5x1x1"
 REF_STL, CONF_STL, TMF_3MF = f"{REF}.stl", f"soundness/{CONF}.stl", f"soundness/{THREEMF_CHECK[0]}.3mf"
@@ -117,15 +131,23 @@ def row(bbox=0.0, vol=0.0, p99=(0.0, 0.0), mx=(0.0, 0.0), vmax=(0.0, 0.0), sampl
 def test_policy():
     def walls(front, back, left, right):
         return dict(front_wall=f'"{front}"', back_wall=f'"{back}"', left_wall=f'"{left}"', right_wall=f'"{right}"')
+    kinds = ("topped", "topless", "simple")
     check("the rules are the documented ones", policy.RULES == dict(
         LIMITS=dict(bbox=0.02, vol=0.5, p99=0.05, mx=0.2),
         DRIFT=dict(bbox=0.002, vol=0.01, p99=0.002, mx=0.002),
-        N_SAMPLES=50000, SOUND_VOL=0.01, CROSSING_LIMIT=1e-3, CORNER_TOL=1e-7, MERGE_TOLS=(1e-5, 1e-4),
-        EXPORT_FORMAT=("--export-format", "binstl")))
+        N_SAMPLES=50000, SAMPLE_SEED=7, P99=0.99, SOUND_VOL=0.01, CROSSING_LIMIT=1e-3, CORNER_TOL=1e-7,
+        BARY_TOL=1e-10, MERGE_TOLS=(1e-5, 1e-4), EXPORT_FORMAT=("--export-format", "binstl"),
+        NORMAL_RENDER_LINE=(
+            r"^(Geometries in cache|Geometry cache size in bytes|CGAL Polyhedrons in cache|CGAL cache size in bytes"
+            r"|Total rendering time|Top level object is a 3D object|Vertices|Halfedges|Edges|Halffacets|Facets):"
+            r"|^Simple:\s+yes$|^Volumes:\s+2$")))
     check("the shell's coverage is the documented one", policy.SHELL == dict(
         REFERENCES=("T111", "T212", "T313", "T3135", "T323", "T1215", "O111", "O212", "O323", "O1215",
                     "S111", "S212", "S323", "S1215"),
+        CUSTOMIZER=dict(width_lu=(1.0, 0.5, 12.0), height_lu=(0.5, 0.5, 12.0), depth_lu=(1.0, 0.5, 12.0),
+                        front_wall=kinds, back_wall=kinds, left_wall=kinds, right_wall=kinds),
         SOUNDNESS=(
+            ("defaults", {}),
             ("half_w_1.5x1x1", dict(width_lu=1.5, height_lu=1, depth_lu=1)),
             ("half_h_2x1.5x2", dict(width_lu=2, height_lu=1.5, depth_lu=2)),
             ("half_both_2.5x1.5x1.5", dict(width_lu=2.5, height_lu=1.5, depth_lu=1.5)),
@@ -147,15 +169,50 @@ def test_policy():
                                            **walls("simple", "simple", "simple", "simple")))),
         THREEMF_CHECK=("thin_1.5x0.5x1", "half_both_2.5x1.5x1.5", "wide_4x1x1"),
         REJECTED=(
-            ("offstep_width_1.3", dict(width_lu=1.3), "width_lu must be a multiple of 0.5 from 1 to 12, not 1.3"),
-            ("zero_height", dict(height_lu=0), "height_lu must be a multiple of 0.5 from 0.5 to 12, not 0"),
-            ("deep_12.5", dict(depth_lu=12.5), "depth_lu must be a multiple of 0.5 from 1 to 12, not 12.5")),
+            ("width_near_step", dict(width_lu=1.000002), "width_lu must be a multiple of 0.5 from 1 to 12, not 1"),
+            ("width_between_steps", dict(width_lu=1.25), "width_lu must be a multiple of 0.5 from 1 to 12, not 1.25"),
+            ("width_below", dict(width_lu=0.5), "width_lu must be a multiple of 0.5 from 1 to 12, not 0.5"),
+            ("width_above", dict(width_lu=12.5), "width_lu must be a multiple of 0.5 from 1 to 12, not 12.5"),
+            ("height_near_step", dict(height_lu=0.500002),
+             "height_lu must be a multiple of 0.5 from 0.5 to 12, not 0.500002"),
+            ("height_between_steps", dict(height_lu=0.75), "height_lu must be a multiple of 0.5 from 0.5 to 12, not 0.75"),
+            ("height_below", dict(height_lu=0), "height_lu must be a multiple of 0.5 from 0.5 to 12, not 0"),
+            ("height_above", dict(height_lu=12.5), "height_lu must be a multiple of 0.5 from 0.5 to 12, not 12.5"),
+            ("depth_near_step", dict(depth_lu=1.000002), "depth_lu must be a multiple of 0.5 from 1 to 12, not 1"),
+            ("depth_between_steps", dict(depth_lu=1.25), "depth_lu must be a multiple of 0.5 from 1 to 12, not 1.25"),
+            ("depth_below", dict(depth_lu=0.5), "depth_lu must be a multiple of 0.5 from 1 to 12, not 0.5"),
+            ("depth_above", dict(depth_lu=12.5), "depth_lu must be a multiple of 0.5 from 1 to 12, not 12.5"),
+            ("width_not_a_number", dict(width_lu='"a"'), "width_lu must be a multiple of 0.5 from 1 to 12, not a")),
         EXPECTED_MESSAGES={"thin_1.5x0.5x1": (
             "NOTE: left_wall = topped has no effect: the side is shorter than 1 LU, so it has no rail channel.",
             "NOTE: right_wall = topped has no effect: the side is shorter than 1 LU, so it has no rail channel.")}))
     check("every 3MF configuration is a listed configuration",
           set(THREEMF_CHECK) <= {n for n, _ in policy.SOUNDNESS})
     check("the reference list in refs.py is the policy's", refs.EXPECTED == list(REFERENCES))
+    check("a reference key gives MultiBuild's file name, which differs for Simple Walls",
+          refs.fname("T3135") == "3x1x3.5 LU - Topped Rail - MultiBin Shell.stl"
+          and refs.fname("O212") == "2x1x2 LU - Topless Rail - MultiBin Shell.stl"
+          and refs.fname("S1215") == "1x2x1.5 CU - Simple Walls - Multibin Shell.stl")
+    topless = '"topless"'
+    check("a reference key gives its size and wall kind as generator parameters",
+          compare.params("O3135") == dict(width_lu=3, height_lu=1, depth_lu=3.5, front_wall=topless,
+                                          back_wall=topless, left_wall=topless, right_wall=topless)
+          and compare.params("S1215")["front_wall"] == '"simple"' and compare.params("T111")["left_wall"] == '"topped"')
+    # the rejected values follow from the sliders: just off the lowest step, halfway to the next, one step
+    # below the minimum and one step above the maximum
+    probes = {name: p for name, p, _ in policy.REJECTED}
+    derived = True
+    for size in ("width", "height", "depth"):
+        lo, step, hi = policy.CUSTOMIZER[f"{size}_lu"]
+        want = dict(near_step=lo + 0.000002, between_steps=lo + step / 2, below=lo - step, above=hi + step)
+        derived &= all(abs(probes[f"{size}_{k}"][f"{size}_lu"] - v) < 1e-12 for k, v in want.items())
+    check("the rejected values follow from the sliders' ranges", derived)
+    rendered = [p for _, p in policy.SOUNDNESS]
+    ends = True
+    for name in ("width_lu", "height_lu", "depth_lu"):
+        lo, _, hi = policy.CUSTOMIZER[name]
+        ends &= any(p.get(name) == lo for p in rendered) and any(p.get(name) == hi for p in rendered)
+    check("both ends of every slider are rendered", ends)
 
 
 def test_decisions():
@@ -184,11 +241,30 @@ def test_decisions():
           not regress.lock_failures("n", a, dict(a, volume=a["volume"] + policy.SOUND_VOL)))
     check("a volume change just over the tolerance fails",
           regress.lock_failures("n", a, dict(a, volume=a["volume"] + policy.SOUND_VOL + 1e-6)))
-    check("a configuration absent from the baseline fails", regress.lock_failures("n", a, "absent"))
+    check("a volume change of exactly the tolerance passes",
+          not regress.lock_failures("n", dict(a, volume=policy.SOUND_VOL), dict(a, volume=0.0)))
+    check("a render absent from the baseline fails", regress.lock_failures("n", a, "absent"))
+    check("a baseline entry with no shape locked fails", regress.lock_failures("n", a, dict(volume=a["volume"])))
     check("relocking ignores the baseline", not regress.lock_failures("n", a, None))
     check("a crossing at the limit is sound", compare.clean(dict(a, crossing_depth=policy.CROSSING_LIMIT)))
     check("a crossing just over the limit is not", not compare.clean(dict(a, crossing_depth=policy.CROSSING_LIMIT + 1e-9)))
     check("a crossing depth that is not a number is not sound", not compare.clean(dict(a, crossing_depth=nan)))
+    check("a crossing at the limit gives no failure reason",
+          compare.unsound_reasons(dict(a, crossing_depth=policy.CROSSING_LIMIT)) == [])
+    check("a mesh of zero volume is not sound",
+          not compare.clean(dict(a, volume=0.0)) and compare.unsound_reasons(dict(a, volume=0.0)) == ["volume 0.0 not positive"])
+    none = dict.fromkeys(policy.MERGE_TOLS, 0)
+    check("a 3MF export with no fault passes", not regress.threemf_failures("n", 0, none))
+    check("one group of coincident 3MF vertices fails", len(regress.threemf_failures("n", 1, none)) == 1)
+    for tol in policy.MERGE_TOLS:
+        check(f"one edge left by a merge within {tol:g} mm fails",
+              len(regress.threemf_failures("n", 0, {**none, tol: 1})) == 1)
+    same = dict(policy.CUSTOMIZER)
+    check("the policy's own sliders and dropdowns pass", not regress.customizer_failures(same))
+    check("a slider with another range fails", regress.customizer_failures(dict(same, depth_lu=(0.25, 0.25, 20.0))))
+    check("a dropdown with another value fails", regress.customizer_failures(dict(same, left_wall=("topped", "open"))))
+    check("a missing parameter fails", regress.customizer_failures({k: v for k, v in same.items() if k != "width_lu"}))
+    check("an extra parameter fails", regress.customizer_failures(dict(same, lid=(0.0, 1.0, 2.0))))
 
 
 def test_messages():
@@ -201,11 +277,15 @@ def test_messages():
     check("normal OpenSCAD output is no message", compare.render_problems(normal) == [])
     for line in ["WARNING: x", "ERROR: x", "DEPRECATED: x", 'ECHO: "x"', "TRACE: x",
                  "PolySet has nonplanar faces. Attempting alternate construction", "anything else",
-                 "WARNING: Vertices: 3", "Simple: no", "Volumes: 3"]:
+                 "WARNING: Vertices: 3", "Simple: no", "Volumes: 3",
+                 "WARNING: Object may not be a valid 2-manifold and may need repair!"]:
         check(f"'{line[:24]}' is a message", compare.render_problems(normal + line) == [line])
-    check("an expected text is not a message", compare.render_problems('ECHO: "NOTE: a"', ["NOTE: a"]) == [])
+    check("the echo of an expected text is not a message", compare.render_problems('ECHO: "NOTE: a"', ["NOTE: a"]) == [])
     check("a message beside an expected text is still a message",
           compare.render_problems('WARNING: x\nECHO: "NOTE: a"', ["NOTE: a"]) == ["WARNING: x"])
+    for line in ('ECHO: "NOTE: a and more"', 'ECHO: "NOTE: a", "more"', 'WARNING: NOTE: a', "NOTE: a"):
+        check(f"an expected text inside a longer line is a message ({line})",
+              compare.render_problems(line, ["NOTE: a"]) == [line])
     check("an unexpected message fails", regress.message_failures("K", ["WARNING: x"], [], []))
     check("a missing expected message fails", regress.message_failures("K", [], ["NOTE: a"], []))
     check("an expected message seen passes", not regress.message_failures("K", [], ["NOTE: a"], ["NOTE: a"]))
@@ -229,6 +309,10 @@ def test_measure():
     taller = trimesh.creation.box(extents=(10, 10, 10.1))
     r, _ = compare.measure(m, taller, n_samples=20000)
     check("p99 sees a face 0.1 mm off", abs(compare.summary(r)["p99"] - 0.1) < 1e-3)
+    pts = np.array([[0.0, 0, 0], [1, 0, 0], [2, 0, 0], [10, 0, 0], [20, 0, 0]])
+    worst = compare.clusters(pts, np.array([0.1, 0.3, 0.3, 0.2, 0.05]), 2)
+    check("the worst-spot listing keeps the first worst point of each 3 mm cell, largest first, up to the number asked",
+          [(list(p), d) for p, d in worst] == [([1.0, 0.0, 0.0], 0.3), ([10.0, 0.0, 0.0], 0.2)])
 
 
 def test_audit():
@@ -253,11 +337,15 @@ def test_audit():
     needle = np.array([[2, 2, -1], [2, 2, 1], [2, 2, 0.5]], dtype=float)   # a flat sliver through the face
     check("a zero-area triangle piercing a face is measured",
           export_check.pair_depth(face, needle) >= 1.0 - 1e-9 and export_check.pair_depth(needle, face) >= 1.0 - 1e-9)
-    # an edge passing through a face 0.5 from its corner: a crossing; at the corner itself: a shared point
-    for d, crosses in ((0.5, True), (policy.CORNER_TOL / 10, False)):
-        p0, p1 = np.array([[d, d, -1.0]]), np.array([[d, d, 1.0]])
-        hit = export_check.segment_crosses(p0, p1, face[None, 0], face[None, 1], face[None, 2])[0]
-        check(f"an edge through a face {d:g} from its corner {'is' if crosses else 'is not'} a crossing", hit == crosses)
+
+    def through(x, y):
+        """Whether a vertical edge through (x, y) crosses the face."""
+        p0, p1 = np.array([[x, y, -1.0]]), np.array([[x, y, 1.0]])
+        return bool(export_check.segment_crosses(p0, p1, face[None, 0], face[None, 1], face[None, 2])[0])
+    check("an edge through the inside of a face is a crossing", through(0.5, 0.5))
+    check("an edge through a face's corner is a shared point", not through(policy.CORNER_TOL / 10, policy.CORNER_TOL / 10))
+    check("an edge through a face's edge is a crossing", through(0.0, 3.0))
+    check("an edge passing 0.005 mm outside a face is not a crossing", not through(-0.005, 3.0))
     check("two cubes touching at one vertex are two bodies",
           compare.audit(stl("touch", joined(cube(), cube((10, 10, 10)))))["bodies"] == 2)
     check("two separate cubes are not sound", not compare.clean(compare.audit(stl("apart", joined(cube(), cube((20, 0, 0)))))))
@@ -314,67 +402,102 @@ def test_3mf():
     except ValueError:
         refused = True
     check("a 3MF with no mesh is an error, not a pass", refused)
+    for name, text in (("no_triangles", model([(0, 0, 0), (1, 0, 0)], tris=())), ("no_vertices", model([]))):
+        try:
+            export_check.read_3mf(threemf(name, text))
+            refused = False
+        except ValueError:
+            refused = True
+        check(f"a 3MF with {name.replace('_', ' ')} is an error", refused)
     near = fin(0.000005)
     check("3MF merge folds a fin into an edge with four triangles", export_check.merge_faults(near, 1e-5) == 1)
     check("3MF merge leaves vertices farther apart than the distance", export_check.merge_faults(near, 1e-6) == 0)
+    for tol in policy.MERGE_TOLS:
+        check(f"3MF merge within {tol:g} mm folds vertices at 0.999 of the distance and leaves those at 1.001 of it",
+              export_check.merge_faults(fin(0.999 * tol), tol) == 1 and export_check.merge_faults(fin(1.001 * tol), tol) == 0)
 
 
 # ------------------------------------------------------------------ the render function and the real steps
 
-def stub_render(out, write=True, console="", expected=(), stale=False, render=None):
-    """Run compare.render (or the given render call) against the stand-in
-    OpenSCAD; returns its result and the arguments the stand-in received."""
-    out.parent.mkdir(parents=True, exist_ok=True)
-    if stale:
-        out.write_text("left by an earlier run", encoding="utf-8")
+STUB = [sys.executable, str(HERE / "fixtures" / "stub_openscad.py")]
+
+
+@contextlib.contextmanager
+def stand_in(write=True, console=""):
+    """Point every render at the stand-in for OpenSCAD."""
+    TMP.mkdir(parents=True, exist_ok=True)
     text = TMP / "stub_console.txt"
     text.write_text(console, encoding="utf-8")
+    saved, compare.OPENSCAD_COMMAND = compare.OPENSCAD_COMMAND, STUB
     os.environ["STUB_WRITE"], os.environ["STUB_CONSOLE"] = ("1" if write else "0"), str(text)
-    command = [sys.executable, str(HERE / "fixtures" / "stub_openscad.py")]
     try:
-        if render is None:
-            r = compare.render(command, "gen.scad", dict(width_lu=2, front_wall='"topped"'), out, expected)
-        else:
-            saved, compare.OPENSCAD_COMMAND = compare.OPENSCAD_COMMAND, command
-            try:
-                r = render()
-            finally:
-                compare.OPENSCAD_COMMAND = saved
+        yield
     finally:
+        compare.OPENSCAD_COMMAND = saved
         del os.environ["STUB_WRITE"], os.environ["STUB_CONSOLE"]
-    return r, json.loads(Path(str(out) + ".args.json").read_text(encoding="utf-8"))
+
+
+def stub_args(out):
+    """The arguments the stand-in received for an output file."""
+    return json.loads(Path(str(out) + ".args.json").read_text(encoding="utf-8"))
 
 
 def test_render():
-    out = TMP / "render" / "a.stl"
-    r, args = stub_render(out)
+    folder = TMP / "render"
+    folder.mkdir(parents=True, exist_ok=True)
+    out = folder / "a.stl"
+    with stand_in():
+        r = compare.render(STUB, "gen.scad", dict(width_lu=2, front_wall='"topped"'), out)
     check("a render that wrote its file returns the path", r["path"] == out and out.is_file())
     check("the render passes the output, the generator and every parameter",
-          args == ["-o", str(out), "--export-format", "binstl", "gen.scad", "-D", "width_lu=2", "-D", 'front_wall="topped"'])
-    r, args = stub_render(TMP / "render" / "a.3mf")
-    check("a 3MF render does not ask for binary STL", "--export-format" not in args and r["path"] is not None)
-    r, _ = stub_render(out, write=False, stale=True)
+          stub_args(out) == ["-o", str(out), "--export-format", "binstl", "gen.scad",
+                             "-D", "width_lu=2", "-D", 'front_wall="topped"'])
+    with stand_in():
+        r = compare.render(STUB, "gen.scad", {}, folder / "a.3mf")
+    check("a 3MF render does not ask for binary STL",
+          "--export-format" not in stub_args(folder / "a.3mf") and r["path"] is not None)
+    out.write_text("left by an earlier run", encoding="utf-8")
+    with stand_in(write=False):
+        r = compare.render(STUB, "gen.scad", {}, out)
     check("a render that wrote no file returns no path", r["path"] is None)
     check("a file left by an earlier run is deleted before the render", not out.exists())
-    r, _ = stub_render(out, console='WARNING: x\nECHO: "NOTE: a"\n', expected=["NOTE: a", "NOTE: b"])
-    check("a render's messages beside its expected texts are reported", r["problems"] == ["WARNING: x"])
-    check("only the expected texts that appeared count as seen", r["seen"] == ["NOTE: a"])
+    with stand_in(console='WARNING: x\nECHO: "NOTE: a"\nECHO: "NOTE: c and more"\n'):
+        r = compare.render(STUB, "gen.scad", {}, out, ["NOTE: a", "NOTE: b", "NOTE: c"])
+    check("a render's messages beside its expected texts are reported",
+          r["problems"] == ["WARNING: x", 'ECHO: "NOTE: c and more"'])
+    check("only the expected texts that appeared count as seen", r["seen"] == ["NOTE: a", "NOTE: c"])
     check("the console text is returned", "WARNING: x" in r["console"])
+    with stand_in():
+        r = compare.render(STUB, "gen.scad", {}, folder / "new" / "b.stl")
+    check("a render makes its output folder", r["path"] == folder / "new" / "b.stl")
 
 
 def test_real_steps():
     """The real run's own steps, on small inputs: the stand-ins in FakeSteps
-    cannot show that the real ones apply every check. Steps.unit_tests runs
-    this file, so it cannot be tested from here."""
+    cannot show that the real ones do their work."""
     steps = regress.Steps()
-    scad = TMP / "other.scad"
-    scad.write_bytes(b"cube(1);\r\n")
-    target = compare.out_for(scad) / "soundness" / "a.stl"
-    r, args = stub_render(target, console="WARNING: y\n", stale=True,
-                          render=lambda: steps.render(scad, "soundness/a.stl", dict(width_lu=3), ()))
+    TMP.mkdir(parents=True, exist_ok=True)
+    OTHER_SCAD.write_bytes(b"cube(1);\r\n")
+    alt = compare.OUT / "alt" / OTHER_SCAD.stem
+    shutil.rmtree(alt, ignore_errors=True)
+    check("the generator's renders go to the output folder", compare.out_for() == compare.OUT
+          and compare.out_for(compare.SCAD) == compare.OUT)
+    check("another SCAD file's renders go to a folder of its own, made on demand",
+          compare.out_for(OTHER_SCAD) == alt and alt.is_dir())
+    target = alt / "soundness" / "a.stl"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("left by an earlier run", encoding="utf-8")
+    with stand_in(console='WARNING: y\nECHO: "NOTE: a"\n'):
+        r = steps.render(OTHER_SCAD, "soundness/a.stl", dict(width_lu=3), ["NOTE: a"])
+        version = steps.renderer()
+    args = stub_args(target)
     check("the real render step writes under the generator's own output folder", r["path"] == target)
-    check("the real render step renders STL in binary and reports messages",
-          "binstl" in args and "width_lu=3" in args and r["problems"] == ["WARNING: y"])
+    check("the real render step passes the generator, the parameters and the binary STL format",
+          str(OTHER_SCAD) in args and "width_lu=3" in args and "binstl" in args)
+    check("the real render step reports messages and the expected texts seen",
+          r["problems"] == ["WARNING: y"] and r["seen"] == ["NOTE: a"])
+    check("the real renderer step asks the render command for its version", version == "OpenSCAD version 0.0 (stand-in)")
+    check("the real clock step gives a date and time", bool(re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d", steps.now())))
     with np.errstate(divide="ignore", invalid="ignore"):
         check("the real audit measures crossings", steps.audit(bowtie())["crossing_depth"] > policy.CROSSING_LIMIT)
     check("the real audit passes a sound mesh", compare.clean(steps.audit(stl("cube", cube()))))
@@ -400,28 +523,58 @@ def test_real_steps():
     check("the real measure step draws the required number of samples", m["samples"] == policy.N_SAMPLES)
     check("the real coverage step finds missing references", missing == list(REFERENCES[1:]))
     check("the generator digest ignores line endings",
-          steps.digest(scad) == hashlib.sha256(b"cube(1);\n").hexdigest().upper())
-    report = TMP / "VERIFICATION.md"
-    report.write_text(regress.report_text([dict(row(key=k), seconds=12.0) for k in REFERENCES],
-                                          "2026-01-01 00:00", "2026-01-01 00:30", "A" * 64, "OpenSCAD test"),
-                      encoding="utf-8")
-    text = report.read_text(encoding="utf-8")
-    check("the report names the generator's digest where the gate reads it back", regress.report_digest(report) == "A" * 64)
-    check("the report has a row for every reference", all(f"| {k} |" in text for k in REFERENCES))
+          steps.digest(OTHER_SCAD) == hashlib.sha256(b"cube(1);\n").hexdigest().upper())
+    # the Customizer step, on a small generator text
+    text = ('/* [Size] */\n// Width = how wide\nwidth_lu = 2; // [1:0.5:12]\nfront_wall = "topped"; // [topped, topless, simple]\n'
+            'plain = 3;\n  indented = 1; // [0:1:2]\nsplit =\n  4; // [3:1:5]\n$fn = 32; // [8:1:64]\n'
+            '// a brace { in a comment, and one in a string below\nlabel = "{"; // [a, b]\n'
+            '/* [Hidden] */\nhidden = 1; // [0:1:5]\n/* [Later] */\nlater = 2; // [0:1:9]\n'
+            '/* [ Hidden ] */\nspaced = 1;\n/* [Hidden] */\nagain = 1;\n/* a note */\nnoted = 1;\n'
+            'module m() { inside = 1; // [0:1:2]\n}\n/* [After] */\nafter = 1; // [0:1:2]\n')
+    scad = TMP / "customizer.scad"
+    scad.write_text(text, encoding="utf-8")
+    want = dict(width_lu=(1.0, 0.5, 12.0), front_wall=("topped", "topless", "simple"), plain=(), indented=(0.0, 1.0, 2.0),
+                split=(), label=("a", "b"), later=(0.0, 1.0, 9.0), spaced=(), noted=())
+    want["$fn"] = (8.0, 1.0, 64.0)
+    check("the real Customizer step reads every parameter before the first block that no Hidden marker hides: with a "
+          "note or none, indented, named with $, after a brace in a comment or a string, in a section opened after the "
+          "Hidden one, and after any one-line block comment whose first bracketed name is not Hidden; a note on a later line of a "
+          "split assignment does not count", steps.customizer(scad) == want)
+    # the real file steps, pointed at scratch files
+    saved = regress.BASELINE, regress.REPORT, regress.UNIT_TESTS
+    regress.BASELINE, regress.REPORT = TMP / "baseline.json", TMP / "REPORT.md"
+    try:
+        check("no baseline file loads as none", steps.load_baseline() is None)
+        steps.write_baseline(dict(models={}, soundness={}, scad_digest="X"))
+        check("the real baseline steps read back what they wrote",
+              steps.load_baseline() == dict(models={}, soundness={}, scad_digest="X"))
+        check("no report has no digest", steps.report_digest() is None)
+        steps.write_report(regress.report_text([dict(row(key=k), seconds=12.0) for k in REFERENCES],
+                                               "2026-01-01 00:00", "2026-01-01 00:30", "A" * 64, "OpenSCAD test"))
+        report = regress.REPORT.read_text(encoding="utf-8")
+        check("the real report steps read back the digest the report names", steps.report_digest() == "A" * 64)
+        for code, passes in ((0, True), (1, False)):
+            regress.UNIT_TESTS = TMP / f"unit_tests_{code}.py"
+            regress.UNIT_TESTS.write_text(f"import sys\nsys.exit({code})\n", encoding="utf-8")
+            check(f"the real unit test step reports exit status {code}", steps.unit_tests() is passes)
+    finally:
+        regress.BASELINE, regress.REPORT, regress.UNIT_TESTS = saved
+    check("the report has a row for every reference", all(f"| {k} |" in report for k in REFERENCES))
     check("the report states the sample count and the limits",
-          f"{policy.N_SAMPLES} points" in text and f"maxima <= {policy.LIMITS['mx']} mm" in text)
-    check("a missing report has no digest", regress.report_digest(TMP / "no_such_report.md") is None)
+          f"{policy.N_SAMPLES} points" in report and f"maxima <= {policy.LIMITS['mx']} mm" in report)
+    check("the report names the renderer", "Renderer: OpenSCAD test." in report)
 
 
 # ------------------------------------------------------------------ the gate's run
 
 class FakeSteps:
     """Stands in for OpenSCAD, the mesh tools and the files, so run() can be
-    driven through each check in a fraction of a second. It records every call,
-    so a test can see what a run rendered and examined."""
+    driven through each check in a fraction of a second. It records every call
+    with its arguments, so a test can see what a run rendered and examined."""
 
     def __init__(self, baseline=None, **faults):
         self.baseline, self.written, self.report, self.calls = baseline, None, None, []
+        self.scads = set()          # (step, SCAD file) for every step that is handed the file
         self.faults = faults
         self.digests = iter(faults.get("digests", []))
 
@@ -435,16 +588,22 @@ class FakeSteps:
         return "2026-01-01 00:00"
 
     def digest(self, scad):
+        self.scads.add(("digest", scad))
         return next(self.digests, "D")
 
     def report_digest(self):
         return self.faults.get("report_digest", "D")
 
+    def customizer(self, scad):
+        self.scads.add(("customizer", scad))
+        return self.faults.get("customizer", dict(policy.CUSTOMIZER))
+
     def missing_refs(self):
         return list(self.faults.get("missing", []))
 
     def render(self, scad, name, params, expected):
-        self.calls.append(("render", name))
+        self.calls.append(("render", name, dict(params), tuple(expected)))
+        self.scads.add((f"render {name}", scad))
         if name in self.faults.get("no_file", []):
             return dict(path=None, seconds=1.0, console="render failed", problems=[], seen=[])
         if any(name == f"soundness/{r[0]}.stl" for r in policy.REJECTED):
@@ -454,7 +613,7 @@ class FakeSteps:
                     seen=[e for e in expected if e not in self.fault("unseen", name, [])])
 
     def measure(self, key, path):
-        self.calls.append(("measure", key))
+        self.calls.append(("measure", key, path))
         return row(key=key, **self.fault("measure", key, {}))
 
     def audit(self, path):
@@ -484,10 +643,10 @@ class FakeSteps:
         self.report = text
 
 
-def gate_run(baseline, **kw):
+def gate_run(baseline, log=None, **kw):
     faults = {k: kw.pop(k) for k in list(kw) if k not in ("update", "accept", "quick", "alternate")}
     steps = FakeSteps(baseline, **faults)
-    code, failures = regress.run(steps, "fake.scad", log=lambda *a: None, **kw)
+    code, failures = regress.run(steps, "fake.scad", log=(lambda *a: None) if log is None else log.append, **kw)
     return code, failures, steps
 
 
@@ -521,6 +680,8 @@ def test_checks():
     fails("locked generator", "a missing VERIFICATION.md", "VERIFICATION.md is for another version", report_digest=None)
     fails("generator unchanged", "a generator edited during the run", "the file changed during the run",
           digests=["D", "E"])
+    fails("customizer", "a slider with another range", "customizer: depth_lu is annotated (0.25, 0.25, 20.0)",
+          customizer=dict(policy.CUSTOMIZER, depth_lu=(0.25, 0.25, 20.0)))
 
     fails("reference coverage", "a missing reference file", f"{REF}: reference file missing", missing=[REF])
     fails("reference coverage", "a baseline reference the policy does not list", "X999: in the baseline but not in",
@@ -532,6 +693,9 @@ def test_checks():
     fails("configuration coverage", "a baseline configuration the policy does not list",
           "soundness/extra: in the baseline but no longer checked",
           baseline=dict(locked, soundness=dict(locked["soundness"], extra={})))
+
+    check("--quick leaves the configurations' coverage to the full run",
+          gate_run(dict(locked, soundness=dict(locked["soundness"], extra={})), quick=True)[0] == 0)
 
     fails("render success", "a failed reference render", f"{REF}: render failed", no_file=[REF_STL])
     fails("render success", "a failed configuration render", f"soundness/{CONF}: render failed", no_file=[CONF_STL])
@@ -562,37 +726,70 @@ def test_checks():
     fails("crossings", "crossing triangles in a reference",
           f"{REF}: mesh not a clean single shell: triangles crossing 0.01 mm deep",
           audit={REF_STL: dict(crossing_depth=0.01)})
-    fails("shape lock", "a changed vertex digest", f"soundness/{CONF}: geometry changed vs baseline",
+    fails("shape lock", "a configuration's changed vertex digest", f"soundness/{CONF}: geometry changed vs baseline",
           audit={CONF_STL: dict(digest="x")})
-    fails("shape lock", "a changed volume with the same vertices", f"soundness/{CONF}: geometry changed vs baseline",
-          audit={CONF_STL: dict(volume=1.0 + policy.SOUND_VOL + 1e-6)})
+    fails("shape lock", "a configuration's changed volume with the same vertices",
+          f"soundness/{CONF}: geometry changed vs baseline", audit={CONF_STL: dict(volume=1.0 + policy.SOUND_VOL + 1e-6)})
+    fails("shape lock", "a reference's changed vertex digest", f"{REF}: geometry changed vs baseline",
+          audit={REF_STL: dict(digest="x")})
+    fails("shape lock", "a reference whose shape the baseline does not lock", f"{REF}: absent from baseline",
+          baseline=dict(locked, models=dict(locked["models"],
+                                            **{REF: {k: v for k, v in locked["models"][REF].items() if k != "digest"}})))
+    code, failures, _ = gate_run(locked, quick=True, audit={REF_STL: dict(digest="x")})
+    check("[shape lock] --quick still locks the references' shapes", code == 1 and has(failures, f"{REF}: geometry changed"))
 
     fails("3MF coincident vertices", "coincident 3MF vertices", "3MF has 2 group(s)", coincident=2)
     for tol, text in ((1e-5, "3MF merged within 1e-05 mm leaves 2 edge(s)"),
                       (1e-4, "3MF merged within 0.0001 mm leaves 2 edge(s)")):
         fails("3MF merges", f"a 3MF that a merge within {tol:g} mm folds", text, merged={tol: 2})
-    fails("rejected sizes", "a size that is not rejected", "rejected/zero_height: expected the render to stop",
+    fails("rejected sizes", "a size that is not rejected", "rejected/height_below: expected the render to stop",
           rejects=False)
-    fails("rejected sizes", "a rejected size that still writes a file", "rejected/deep_12.5: expected the render to stop",
+    fails("rejected sizes", "a rejected size that still writes a file", "rejected/depth_above: expected the render to stop",
           reject_writes=True)
 
-    # a clean run renders and examines everything the policy lists
-    stls = ([f"{k}.stl" for k in REFERENCES] + [f"soundness/{n}.stl" for n, _ in policy.SOUNDNESS])
+    # a clean run renders, measures and examines exactly what the policy lists
+    def renders(names_params_expected):
+        return sorted((n, sorted(p.items()), tuple(e)) for n, p, e in names_params_expected)
+    want = [(f"{k}.stl", compare.params(k), ()) for k in REFERENCES]
+    for n, p in policy.SOUNDNESS:
+        notes = policy.EXPECTED_MESSAGES.get(n, ())
+        want.append((f"soundness/{n}.stl", p, notes))
+        if n in THREEMF_CHECK:
+            want.append((f"soundness/{n}.3mf", p, notes))
+    want += [(f"soundness/{n}.stl", p, (error,)) for n, p, error in policy.REJECTED]
+    done = lambda kind, steps=clean_run: [c[1:] for c in steps.calls if c[0] == kind]     # noqa: E731
+    stls = [f"{k}.stl" for k in REFERENCES] + [f"soundness/{n}.stl" for n, _ in policy.SOUNDNESS]
     tmfs = [f"soundness/{n}.3mf" for n in THREEMF_CHECK]
-    done = lambda kind: sorted(c[1] for c in clean_run.calls if c[0] == kind)     # noqa: E731
-    check("a clean run renders every reference, configuration, 3MF export and rejected size",
-          done("render") == sorted(stls + tmfs + [f"soundness/{r[0]}.stl" for r in policy.REJECTED]))
-    check("a clean run measures every reference", done("measure") == sorted(REFERENCES))
-    check("a clean run audits every STL it rendered", done("audit") == sorted(stls))
+    check("a clean run renders every reference, configuration, 3MF export and rejected size, each with "
+          "its own parameters and expected texts", renders(done("render")) == renders(want))
+    check("a clean run renders, digests and reads the Customizer of the SCAD file it was given, and no other",
+          clean_run.scads == {(f"render {n}", "fake.scad") for n, _, _ in want}
+          | {("digest", "fake.scad"), ("customizer", "fake.scad")})
+    check("a clean run measures every reference's own render", done("measure") == [(k, f"{k}.stl") for k in REFERENCES])
+    check("a clean run audits every STL it rendered", sorted(c[0] for c in done("audit")) == sorted(stls))
     check("a clean run checks every 3MF export both ways",
-          done("coincident_3mf") == sorted(tmfs) and done("merge_faults") == sorted(tmfs))
+          sorted(c[0] for c in done("coincident_3mf")) == sorted(tmfs)
+          and sorted(c[0] for c in done("merge_faults")) == sorted(tmfs))
     code, _, quick_run = gate_run(locked, quick=True)
     check("--quick renders only the references",
-          code == 0 and sorted(c[1] for c in quick_run.calls if c[0] == "render") == sorted(f"{k}.stl" for k in REFERENCES))
+          code == 0 and sorted(c[0] for c in done("render", quick_run)) == sorted(f"{k}.stl" for k in REFERENCES))
+
+    # the run's log, which is what a person reads
+    lines = []
+    gate_run(locked, log=lines, audit={CONF_STL: dict(digest="x"), NOTE_STL: dict(bodies=2)})
+    state = {n: next(ln.split()[1] for ln in lines if ln.split()[:1] == [n]) for n, _ in policy.SOUNDNESS}
+    check("the log marks a changed configuration, a broken one and the rest",
+          state[CONF] == "CHANGED" and state["thin_1.5x0.5x1"] == "BROKEN"
+          and all(s == "ok" for n, s in state.items() if n not in (CONF, "thin_1.5x0.5x1")))
 
     # relock rules
     check("[relock rules] a relock records the generator's digest and writes the report naming it",
           locked.get("scad_digest") == "D" and first.report and "SHA-256 D," in first.report)
+    check("[relock rules] the report a relock writes has a row for every reference, with its measurements",
+          all(f"| {k} | 0.0000 | 0.000 |" in first.report for k in REFERENCES))
+    check("[relock rules] a relock locks every render's shape",
+          all("digest" in m and "volume" in m for m in locked["models"].values())
+          and all("digest" in a for a in locked["soundness"].values()))
     check("[relock rules] a plain run writes neither the baseline nor the report",
           clean_run.written is None and clean_run.report is None)
     check("[relock rules] a relock without the configurations is refused", gate_run(locked, update=True, quick=True)[0] == 2)
@@ -602,11 +799,22 @@ def test_checks():
     code, failures, steps = gate_run(locked, update=True, **drift)
     check("[relock rules] a relock refuses drift without --accept-drift",
           code == 1 and steps.written is None and steps.report is None and has(failures, "--accept-drift"))
-    code, failures, steps = gate_run(locked, update=True, accept=True, **drift)
+    lines = []
+    code, failures, steps = gate_run(locked, log=lines, update=True, accept=True, **drift)
     check("[relock rules] a relock with --accept-drift writes the baseline", code == 0 and steps.written is not None)
-    code, failures, steps = gate_run(locked, update=True, audit={CONF_STL: dict(digest="x")})
-    check("[relock rules] a relock refuses a changed shape without --accept-drift",
-          code == 1 and steps.written is None and has(failures, "geometry changed vs baseline"))
+    check("[relock rules] a relock logs each change it accepts",
+          any(ln.startswith("accepting 1 change(s)") for ln in lines) and any(f"- {REF}: DRIFT mx" in ln for ln in lines))
+    lines = []
+    gate_run(locked, log=lines, update=True)
+    check("[relock rules] a relock that changes nothing logs no accepted change",
+          not any(ln.startswith("accepting") for ln in lines))
+    code, failures, steps = gate_run(locked, update=True, accept=True, missing=[REF])
+    check("[relock rules] a relock never skips a missing reference file, even with --accept-drift",
+          code == 1 and steps.written is None and has(failures, f"{REF}: reference file missing"))
+    for label, path in (("configuration", CONF_STL), ("reference", REF_STL)):
+        code, failures, steps = gate_run(locked, update=True, audit={path: dict(digest="x")})
+        check(f"[relock rules] a relock refuses a {label}'s changed shape without --accept-drift",
+              code == 1 and steps.written is None and has(failures, "geometry changed vs baseline"))
     code, failures, steps = gate_run(locked, update=True, accept=True, audit={REF_STL: dict(watertight=False)})
     check("[relock rules] a relock never writes over a failure", code == 1 and steps.written is None and steps.report is None)
     code, failures, steps = gate_run(dict(locked, soundness=dict(locked["soundness"], extra={})), update=True)
@@ -618,12 +826,61 @@ def test_checks():
     covered.add("relock rules")
 
     check("every check in regress.CHECKS has a test through run()", covered == set(regress.CHECKS))
+    return locked
+
+
+def test_command_line(locked):
+    """What each flag asks of the run, and that main() passes it on."""
+    plain = dict(scad=compare.SCAD, update=False, accept=False, quick=False, alternate=False)
+    check("no flag asks for a plain full run of the generator", regress.options([]) == plain)
+    check("--quick asks for the quick run only", regress.options(["--quick"]) == dict(plain, quick=True))
+    check("--update-baseline asks for a relock only", regress.options(["--update-baseline"]) == dict(plain, update=True))
+    check("--accept-drift alone accepts drift only", regress.options(["--accept-drift"]) == dict(plain, accept=True))
+    check("--scad names another file and marks the run as alternate",
+          regress.options(["--scad", str(OTHER_SCAD)]) == dict(plain, scad=OTHER_SCAD.resolve(), alternate=True))
+
+    def main(*argv):
+        steps = FakeSteps(locked)
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = regress.main(list(argv), steps=steps)
+        return code, [c[1] for c in steps.calls if c[0] == "render"], steps
+    def printed(*argv):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            regress.main(list(argv), steps=FakeSteps(locked))
+        return out.getvalue()
+    check("main announces a run on another SCAD file, and only then",
+          f"ALTERNATE SCAD: {OTHER_SCAD.name}" in printed("--scad", str(OTHER_SCAD)) and "ALTERNATE" not in printed())
+    code, rendered, steps = main()
+    check("main with no flag runs the full gate and writes nothing",
+          code == 0 and len(rendered) > len(REFERENCES) and steps.written is None)
+    code, rendered, _ = main("--quick")
+    check("main --quick renders only the references", code == 0 and len(rendered) == len(REFERENCES))
+    code, _, steps = main("--update-baseline")
+    check("main --update-baseline relocks", code == 0 and steps.written is not None)
+    code, _, steps = main("--update-baseline", "--quick")
+    check("main refuses a quick relock", code == 2 and steps.written is None)
+    code, _, steps = main("--scad", str(OTHER_SCAD), "--update-baseline")
+    check("main refuses a relock from another SCAD", code == 2 and steps.written is None)
+    steps = FakeSteps(locked, measure={REF: dict(mx=(0.003, 0.0))})
+    with contextlib.redirect_stdout(io.StringIO()):
+        refused = regress.main(["--update-baseline"], steps=steps)
+    check("main without --accept-drift refuses a relock over drift", refused == 1 and steps.written is None)
+    steps = FakeSteps(locked, measure={REF: dict(mx=(0.003, 0.0))})
+    with contextlib.redirect_stdout(io.StringIO()):
+        accepted = regress.main(["--update-baseline", "--accept-drift"], steps=steps)
+    check("main --accept-drift relocks over drift", accepted == 0 and steps.written is not None)
 
 
 def main():
-    for test in (test_policy, test_decisions, test_messages, test_measure, test_audit, test_3mf, test_render,
-                 test_real_steps, test_checks):
-        test()
+    try:
+        for test in (test_policy, test_decisions, test_messages, test_measure, test_audit, test_3mf, test_render,
+                     test_real_steps):
+            test()
+        test_command_line(test_checks())
+    finally:
+        shutil.rmtree(TMP, ignore_errors=True)
+        shutil.rmtree(compare.OUT / "alt" / OTHER_SCAD.stem, ignore_errors=True)
     bad = [name for name, ok in results if not ok]
     for name, ok in results:
         print(f"  {'ok  ' if ok else 'FAIL'} {name}")

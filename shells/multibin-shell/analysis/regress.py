@@ -5,16 +5,18 @@ clean, unchanged geometry. Run it after ANY change to the SCAD.
 CHECKS below is the closed list of what the gate checks; docs/verification-method.md
 explains each. gate_test.py has a test of every check through run(), and
 mutation_test.py disables each check in turn to show that test notices. The
-numbers and lists the checks use are in policy.py.
+limits and lists that document names are in policy.py.
 
 Requires the packages in requirements.txt at the repository root.
 
 Usage:
   python regress.py                    check against analysis/baseline.json
   python regress.py --update-baseline  relock the baseline and rewrite VERIFICATION.md (refused over
-                                       any failure, and over any drift, shape change or dropped
-                                       coverage unless --accept-drift)
-  python regress.py --quick            skip the configurations without a reference (not with
+                                       any failure, and, unless --accept-drift, over any drift,
+                                       shape change or dropped coverage against the baseline it
+                                       replaces)
+  python regress.py --quick            render only the references: skip the configurations without a
+                                       reference, their 3MF exports and the rejected sizes (not with
                                        --update-baseline)
   python regress.py --scad PATH        check a different SCAD (selftest.py uses this)
 """
@@ -37,19 +39,24 @@ from refs import fname
 HERE = Path(__file__).resolve().parent
 BASELINE = HERE / "baseline.json"
 REPORT = compare.ROOT / "VERIFICATION.md"
-AUDIT_FLAGS = ("watertight", "winding", "bodies", "bad_edges", "dup_faces", "crossing_depth")
+UNIT_TESTS = HERE / "gate_test.py"
+# what the baseline keeps of a reference render's audit, besides its metrics
+AUDIT_KEPT = ("watertight", "winding", "bodies", "bad_edges", "dup_faces", "crossing_depth",
+              "digest", "volume", "extents")
 
 CHECKS = {
     "unit tests": "gate_test.py passes before anything is rendered",
     "locked generator": "the generator is the file the baseline and VERIFICATION.md were made from",
+    "customizer": "the parameters a scan finds outside the generator's Hidden section and before its first block, "
+                  "with their sliders and dropdowns, are those of policy.CUSTOMIZER",
     "generator unchanged": "the generator is the same file at the end of the run as at the start",
     "reference coverage": "every reference in policy.REFERENCES is present, measured and in the baseline, "
                           "and the baseline holds no other",
     "configuration coverage": "every configuration in policy.SOUNDNESS is rendered and in the baseline, "
                               "and the baseline holds no other",
     "render success": "every render writes its file",
-    "render messages": "no render, STL or 3MF, prints anything beyond OpenSCAD's normal statistics and "
-                       "the expected notes",
+    "render messages": "no render, STL or 3MF, prints a line that is neither one of OpenSCAD's normal "
+                       "statistics lines nor exactly an expected note",
     "expected messages": "every note in policy.EXPECTED_MESSAGES appears",
     "hard limits": "every reference meets the Gate 1 limits, measured from policy.N_SAMPLES points per "
                    "direction; a value that is not a number fails",
@@ -57,11 +64,12 @@ CHECKS = {
     "mesh soundness": "every STL is watertight, consistently wound, of positive volume and one body, with "
                       "every edge shared by exactly two faces and no duplicated facets",
     "crossings": "no two triangles that share at most one vertex cross deeper than policy.CROSSING_LIMIT",
-    "shape lock": "each configuration's vertex digest and volume match the baseline",
+    "shape lock": "every render's vertex digest and volume match the baseline, references and "
+                  "configurations alike",
     "3MF coincident vertices": "no 3MF export writes two separate vertices at identical coordinates",
     "3MF merges": "merging a 3MF export's vertices within each of policy.MERGE_TOLS leaves every edge "
                   "shared by exactly two triangles",
-    "rejected sizes": "each size in policy.REJECTED stops the render with its error and writes no file",
+    "rejected sizes": "each value in policy.REJECTED stops the render with its error and writes no file",
     "relock rules": "a relock is refused from --quick or another SCAD, is never written over a failure, "
                     "and needs --accept-drift for drift, a shape change or dropped coverage",
 }
@@ -99,18 +107,25 @@ def soundness_failures(label, a):
     return [] if clean(a) else [f"{label}: mesh not a clean single shell: {'; '.join(unsound_reasons(a))}"]
 
 
-def lock_failures(name, a, was):
-    """A configuration without a reference that is not in the baseline, or whose
-    shape changed since the baseline was locked (was is None when relocking)."""
+def lock_failures(label, a, was):
+    """A render that is not in the baseline, or whose shape changed since the
+    baseline was locked (was is None when relocking)."""
     if was is None:
         return []
-    if was == "absent":
-        return [f"soundness/{name}: absent from baseline; relock to cover it"]
+    if was == "absent" or "digest" not in was:
+        return [f"{label}: absent from baseline; relock to cover it"]
     dv = a["volume"] - was["volume"]
     if a["digest"] != was["digest"] or abs(dv) > policy.SOUND_VOL:
         de = max(abs(x - y) for x, y in zip(a["extents"], was["extents"]))
-        return [f"soundness/{name}: geometry changed vs baseline (bbox {de:.4f} mm, volume {dv:+.3f} mm3)"]
+        return [f"{label}: geometry changed vs baseline (bbox {de:.4f} mm, volume {dv:+.3f} mm3)"]
     return []
+
+
+def customizer_failures(found):
+    """Sliders or dropdowns in the generator's text that differ from the policy's."""
+    names = list(policy.CUSTOMIZER) + [n for n in found if n not in policy.CUSTOMIZER]
+    return [f"customizer: {n} is annotated {found.get(n)}, and the policy has {policy.CUSTOMIZER.get(n)}"
+            for n in names if found.get(n) != policy.CUSTOMIZER.get(n)]
 
 
 def threemf_failures(name, groups, merged):
@@ -130,7 +145,7 @@ def locked_generator_failures(digest, locked, reported):
     out = []
     if locked != digest:
         out.append(f"generator: the baseline was locked on another version of this file (SHA-256 {locked}); "
-                   "relock, which also proves nothing drifted")
+                   "relock; without --accept-drift that also shows no shape the gate renders changed")
     if reported != digest:
         out.append(f"generator: VERIFICATION.md is for another version of this file (SHA-256 {reported}); "
                    "a relock rewrites it")
@@ -160,11 +175,13 @@ def relock_changes(current, sound_now, old):
     out += [f"soundness/{n}: locked configuration no longer checked" for n in old.get("soundness", {})
             if n not in sound_now]
     for key, m in current.items():
-        if key in old.get("models", {}):
-            out += drift_failures(key, m, old["models"][key])
+        was = old.get("models", {}).get(key)
+        if was:
+            out += drift_failures(key, m, was)
+            out += lock_failures(key, m, was)
     for name, a in sound_now.items():
         if name in old.get("soundness", {}):
-            out += lock_failures(name, a, old["soundness"][name])
+            out += lock_failures(f"soundness/{name}", a, old["soundness"][name])
     return out
 
 
@@ -228,7 +245,7 @@ class Steps:
     their place, and tests these real ones separately on small inputs."""
 
     def unit_tests(self):
-        r = subprocess.run([sys.executable, str(HERE / "gate_test.py")], capture_output=True, text=True, cwd=HERE)
+        r = subprocess.run([sys.executable, str(UNIT_TESTS)], capture_output=True, text=True, cwd=HERE)
         return r.returncode == 0
 
     def now(self):
@@ -239,6 +256,9 @@ class Steps:
 
     def report_digest(self):
         return report_digest(REPORT)
+
+    def customizer(self, scad):
+        return compare.customizer(scad)
 
     def missing_refs(self):
         return [k for k in REFERENCES if not (refs.STL_DIR / fname(k)).is_file()]
@@ -296,6 +316,7 @@ def run(steps, scad, update=False, accept=False, quick=False, alternate=False, l
     failures = coverage_failures(missing, base, update, quick)
     if not update:
         failures += locked_generator_failures(digest, base.get("scad_digest"), steps.report_digest())
+    failures += customizer_failures(steps.customizer(scad))
     rows, current, sound_now = [], {}, {}
 
     log("=" * 78)
@@ -310,11 +331,12 @@ def run(steps, scad, update=False, accept=False, quick=False, alternate=False, l
         row = steps.measure(key, r["path"])
         m, a = compare.summary(row), steps.audit(r["path"])
         rows.append(dict(row, key=key, seconds=r["seconds"]))
-        current[key] = dict(m, render_s=round(r["seconds"], 1), **{k: a[k] for k in AUDIT_FLAGS})
+        current[key] = dict(m, render_s=round(r["seconds"], 1), **{k: a[k] for k in AUDIT_KEPT})
         failures += hard_failures(key, m) + sample_failures(key, row) + soundness_failures(key, a)
         was = base.get("models", {}).get(key)
         if was:
             failures += drift_failures(key, m, was)
+            failures += lock_failures(key, a, was)
             log(f"{key:6} " + "  ".join(f"{f}={m[f]:.4f}({m[f] - was[f]:+.4f})" for f in DRIFT))
 
     if not quick:
@@ -334,7 +356,7 @@ def run(steps, scad, update=False, accept=False, quick=False, alternate=False, l
             a = steps.audit(r["path"])
             sound_now[name] = a
             found = soundness_failures(f"soundness/{name}", a)
-            found += lock_failures(name, a, None if update else golden.get(name, "absent"))
+            found += lock_failures(f"soundness/{name}", a, None if update else golden.get(name, "absent"))
             failures += found
             state = "ok" if not found else "CHANGED" if clean(a) else "BROKEN"
             log(f"  {name:24} {state:7} bbox={a['extents']} vol={a['volume']}")
@@ -392,13 +414,19 @@ def run(steps, scad, update=False, accept=False, quick=False, alternate=False, l
     return 0, failures
 
 
-def main():
-    scad, alternate = compare.SCAD, "--scad" in sys.argv
-    if alternate:
-        scad = Path(sys.argv[sys.argv.index("--scad") + 1]).resolve()
-        print(f"*** checking ALTERNATE SCAD: {scad.name} ***")
-    code, _ = run(Steps(), scad, update="--update-baseline" in sys.argv, accept="--accept-drift" in sys.argv,
-                  quick="--quick" in sys.argv, alternate=alternate)
+def options(argv):
+    """What the command line asks of run()."""
+    alternate = "--scad" in argv
+    scad = Path(argv[argv.index("--scad") + 1]).resolve() if alternate else compare.SCAD
+    return dict(scad=scad, update="--update-baseline" in argv, accept="--accept-drift" in argv,
+                quick="--quick" in argv, alternate=alternate)
+
+
+def main(argv=None, steps=None):
+    asked = options(sys.argv[1:] if argv is None else argv)
+    if asked["alternate"]:
+        print(f"*** checking ALTERNATE SCAD: {asked['scad'].name} ***")
+    code, _ = run(steps or Steps(), **asked)
     return code
 
 

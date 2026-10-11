@@ -3,8 +3,9 @@
 Usage: python compare.py [keys...] [--clusters N]
 Renders the generator for the named reference shells (default: every reference
 in policy.REFERENCES) into .local-build/out/shell/KEY.stl and prints how far
-each render is from its reference, the N worst deviation clusters per
-direction (default 10) and the mesh audit.
+each render is from its reference and the mesh audit. Where points are more
+than 0.05 mm off it also lists, per direction and for each of three height
+bands, up to N of the worst spots (default 10).
 
 This command is a diagnostic: it decides nothing and always exits 0. The gate
 is regress.py, which uses the functions below and writes VERIFICATION.md.
@@ -58,22 +59,16 @@ def out_for(scad=None):
 
 # ------------------------------------------------------------------ rendering
 
-# The lines OpenSCAD 2021.01 prints for every clean render: cache and timing
-# statistics and the summary of the result. Any other line, such as a WARNING,
-# an ERROR, a DEPRECATED notice, an ECHO or the nonplanar-face notice (which
-# has no WARNING prefix), is a render message.
-NORMAL_RENDER_LINE = re.compile(
-    r"^(Geometries in cache|Geometry cache size in bytes|CGAL Polyhedrons in cache|CGAL cache size in bytes"
-    r"|Total rendering time|Top level object is a 3D object|Vertices|Halfedges|Edges|Halffacets|Facets):"
-    # one solid: OpenSCAD reports it as simple, with two volumes (outside and inside)
-    r"|^Simple:\s+yes$|^Volumes:\s+2$")
+NORMAL_RENDER_LINE = re.compile(policy.NORMAL_RENDER_LINE)
 
 
 def render_problems(console, expected=()):
-    """Render messages in OpenSCAD's console output, except lines containing one
-    of the expected texts."""
+    """Render messages in OpenSCAD's console output: every line that is neither
+    one of its normal statistics lines nor exactly the echo of an expected
+    text. A line that holds an expected text and anything more is a message."""
+    echoed = {f'ECHO: "{e}"' for e in expected}
     lines = [ln.strip() for ln in console.splitlines() if ln.strip()]
-    return [ln for ln in lines if not NORMAL_RENDER_LINE.match(ln) and not any(e in ln for e in expected)]
+    return [ln for ln in lines if not NORMAL_RENDER_LINE.match(ln) and ln not in echoed]
 
 
 def render(command, scad, params, out, expected=()):
@@ -100,8 +95,62 @@ def render(command, scad, params, out, expected=()):
 
 
 def openscad_version():
-    r = subprocess.run([OPENSCAD, "--version"], capture_output=True, text=True)
+    r = subprocess.run([*OPENSCAD_COMMAND, "--version"], capture_output=True, text=True)
     return (r.stdout + r.stderr).strip()
+
+
+def customizer(scad=None):
+    """The Customizer parameters in a generator's text, found by scanning its
+    lines; this is not OpenSCAD's own parser. The scan stops at the first "{"
+    outside comments and strings (the generator's parameters all come before
+    its first module). Each line that starts with a name and "=" counts as a
+    parameter, unless the nearest one-line block comment above it has [Hidden]
+    as its first bracketed name. Each maps to its slider as (minimum, step,
+    maximum) or to its dropdown's values, read from a // [...] note that ends
+    that line, or to () when the line has no such note, which the Customizer
+    shows as a plain input box. An assignment that follows a statement on its
+    line, or whose "=" is on a later line than its name, is not read, and
+    comments and strings are not skipped when looking for assignments and
+    block comments."""
+    text = before_first_block(Path(scad or SCAD).read_text(encoding="utf-8"))
+    found, hidden = {}, False
+    for part in re.split(r"(/\*[^\n]*?\*/)", text):
+        if re.fullmatch(r"/\*[^\n]*?\*/", part):
+            section = re.search(r"\[([^\]]*)\]", part)
+            hidden = bool(section) and section.group(1) == "Hidden"
+            continue
+        if hidden:
+            continue
+        for name, rest in re.findall(r"^[ \t]*(\$?\w+)[ \t]*=(?!=)([^\n]*)", part, flags=re.M):
+            note = re.search(r";[ \t]*//[ \t]*\[([^\]]*)\][ \t]*$", rest)
+            if not note:
+                found[name] = ()
+            elif ":" in note.group(1):
+                found[name] = tuple(float(x) for x in note.group(1).split(":"))
+            else:
+                found[name] = tuple(x.strip() for x in note.group(1).split(","))
+    return found
+
+
+def before_first_block(text):
+    """The part of a SCAD text before its first "{" that is not inside a
+    comment or a string."""
+    i = 0
+    while i < len(text):
+        if text.startswith("//", i):
+            i = text.find("\n", i) + 1 or len(text)
+        elif text.startswith("/*", i):
+            i = text.find("*/", i + 2) + 2 if "*/" in text[i + 2:] else len(text)
+        elif text[i] == '"':
+            i += 1
+            while i < len(text) and text[i] != '"':
+                i += 2 if text[i] == "\\" else 1
+            i += 1
+        elif text[i] == "{":
+            return text[:i]
+        else:
+            i += 1
+    return text
 
 
 def scad_digest(path=None):
@@ -198,10 +247,10 @@ def measure(ref, gen, n_samples=None):
                vol=float(abs(gen.volume - ref.volume) / ref.volume * 100))
     spots = {}
     for a, b, tag in ((ref, gen, "ref->gen"), (gen, ref, "gen->ref")):
-        pts, _ = trimesh.sample.sample_surface(a, n_samples, seed=7)
+        pts, _ = trimesh.sample.sample_surface(a, n_samples, seed=policy.SAMPLE_SEED)
         _, dist, _ = trimesh.proximity.closest_point(b, pts)
         _, vdist, _ = trimesh.proximity.closest_point(b, a.vertices)
-        q = np.quantile(dist, [0.95, 0.99])
+        q = np.quantile(dist, [0.95, policy.P99])
         row[tag] = dict(mean=float(dist.mean()), p95=float(q[0]), p99=float(q[1]), mx=float(dist.max()),
                         vmax=float(vdist.max()))
         row["samples"] = int(len(pts))

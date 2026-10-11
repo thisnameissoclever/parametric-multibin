@@ -53,40 +53,41 @@ The shell's gate is the current design, described below. The drawer's gate preda
 
 ### What the shell's gate checks
 
-This list is closed. `regress.CHECKS` holds the same names, and every number and list the checks use is in `analysis/policy.py`. Adding a check means changing this document.
+This list is closed. `regress.CHECKS` holds the same names, and `analysis/policy.py` holds the limits and lists this table names. Adding a check means changing this document. Each row says what the gate checks, no more: a row about renders covers the renders the gate makes of the references and configurations the policy lists. The renders of the rejected sizes have a row of their own and fall outside the Render success and Render messages rows. A `--quick` run renders only the references: it skips the Configuration coverage, Expected messages, 3MF and Rejected sizes rows, and its PASS line says the configurations were skipped.
 
 | Check | What must hold |
 |---|---|
 | Unit tests | `gate_test.py` passes before anything is rendered. |
-| Locked generator | The generator is the file the baseline and `VERIFICATION.md` were made from, by its SHA-256 digest. Any edit to the generator, even to a comment, therefore needs a relock, and a relock without `--accept-drift` proves the edit changed no shape. |
+| Locked generator | The generator is the file the baseline and `VERIFICATION.md` were made from, by its SHA-256 digest. Any edit to the generator's text, even to a comment, therefore needs a relock; a change of line endings alone does not, because the digest is taken with Unix line endings. A relock without `--accept-drift` shows that the edit changed no shape the gate renders, compared with the baseline it replaces. |
+| Customizer | The gate scans the generator's text up to the first `{` outside comments and strings. It takes each line that starts with a name and `=` as a Customizer parameter, unless the nearest one-line block comment above it has `[Hidden]` as its first bracketed name. Those must be the parameters the policy lists, each with the policy's slider range or dropdown values, read from a `// [...]` note that ends that line. A parameter with no such note fails, and so does one in a section opened after the Hidden one. The rejected sizes below are derived from the same ranges, and both ends of every slider are among the configurations rendered. |
 | Generator unchanged | The generator is the same file at the end of the run as at the start. |
 | Reference coverage | Every reference the policy lists has its file, is measured and is in the baseline, and the baseline holds no other reference. A missing reference fails the run; it is never skipped. |
 | Configuration coverage | Every configuration without a reference that the policy lists is rendered and is in the baseline, and the baseline holds no other. |
 | Render success | Every render writes its file. |
-| Render messages | No render, STL or 3MF, prints anything beyond OpenSCAD's normal statistics and the expected notes. |
+| Render messages | No render, STL or 3MF, prints a console line that is neither one of OpenSCAD's normal statistics lines nor exactly an expected note. A line holding an expected note and anything more fails. |
 | Expected messages | Every note the policy expects appears. |
 | Hard limits | Every reference meets the Gate 1 limits, measured from the required number of sampled points. A value that is not a number fails. |
 | Drift | No reference metric is worse than its locked value by more than 0.002 mm, or 0.01 % of volume. |
 | Mesh soundness | Every STL is watertight, consistently wound, of positive volume and one body, with every edge shared by exactly two faces and no duplicated facets. |
 | Crossings | No two triangles that share at most one vertex cross each other by more than 0.001 mm. |
-| Shape lock | Each configuration without a reference has the same vertices, by a digest, and the same volume as when the baseline was locked. This catches a feature that moves, or fuses into the wrong neighbour, while the mesh stays valid. |
+| Shape lock | Every STL the gate renders, reference or not, has the same vertices, by a digest, and the same volume within 0.01 mm3 as when the baseline was locked. This catches a feature that moves, goes missing or fuses into the wrong neighbour while the mesh stays valid and the Gate 1 limits still pass. `--quick` keeps the lock on the references. |
 | 3MF coincident vertices | No 3MF export writes two separate vertices at identical coordinates. 3MF (3D Manufacturing Format) is a zipped mesh format that slicers read. |
 | 3MF merges | Merging a 3MF export's vertices within 0.00001 mm, and within 0.0001 mm, leaves every edge shared by exactly two triangles, as a slicer that merges vertices on import would need. |
-| Rejected sizes | Each size the sliders cannot produce stops the render with its error and writes no file. |
-| Relock rules | A relock is refused from `--quick` or from another SCAD file, is never written over a failure, and needs `--accept-drift` for drift, a shape change or dropped coverage. A relock records the generator's digest in the baseline and writes `VERIFICATION.md`. |
+| Rejected sizes | Each value in the policy's list stops the render with its error and writes no file. For each of the three sizes the list has a value just off a step, a value halfway between two steps, the step below the slider's minimum and the step above its maximum; and it has one value that is not a number. |
+| Relock rules | A relock is refused from `--quick` or from another SCAD file, is never written over a failure, and needs `--accept-drift` for drift, a shape change or dropped coverage against the baseline it replaces; where that baseline has no entry, or there is no baseline, there is nothing to compare. A relock records the generator's digest in the baseline and writes `VERIFICATION.md`. |
 
 ### What the gate does not see
 
-- A feature moved by less than the largest difference on a reference, which is at the threaded holes, leaves the maximum unchanged. It shows in the 99th percentile or the volume only when it covers enough surface, as the rail channel's bulges do; a small feature moved that little can leave every reference metric unchanged. The shape lock catches any such move at the configurations without a reference, and `regress.py --quick` skips those.
-- A feature smaller than the 0.2 mm maximum, such as a 0.2 mm chamfer or a 0.1 mm slit, could be missing without passing a hard limit; the drift check catches that, because each reference is held to its locked worst point.
+- Sizes it does not render. The gate renders the 14 references and the configurations in the policy; a fault that appears only at another size, such as a wrongly accepted value the rejected list does not hold, passes.
 - Triangles that overlap while lying in one plane, such as a sliver folded back against its neighbour, and neighbours that share an edge, are not tested for crossing.
 - Only the three sizes the policy lists are exported as 3MF.
+- Whether the Customizer's descriptions and section titles say true things. The Customizer check is a scan of lines, not OpenSCAD's parser. It compares only the parameters' names, the sliders' ranges and the dropdowns' values. It does not read an assignment that follows a statement on its line, or one whose `=` is on a later line than its name, and it does not skip comments or strings when it looks for assignments and block comments.
 
 ### How the gate is proven
 
-- `gate_test.py` runs in seconds without OpenSCAD. It compares the policy with a literal copy, tests each decision at its limit, drives every check in the list through the gate's run with stand-in renders, and checks that a clean run rendered and examined everything the policy lists. It tests the real steps separately on small inputs, the render function against a stand-in for OpenSCAD.
-- `mutation_test.py` disables each check in the list in a copy, one at a time, and checks that `gate_test.py` fails; it also breaks the measuring tools and the real steps. A mutation that survives is a defect when it disables a listed check and no test fails; any other survivor is a suggestion.
-- `selftest.py` runs both and then the gate against a known-bad version of the generator kept in `analysis/fixtures/`. That run must fail, and must report each defect the fixture is known to have, so a check that stopped working on real renders is noticed.
+- `gate_test.py` runs in seconds and never starts OpenSCAD, though the tools it imports need OpenSCAD's path and the reference folder configured. It compares the policy with a literal copy. It tests the hard limits, the drift tolerances, the shape lock's volume tolerance, the crossing limit, the sample count and the 3MF counts at their limits, and each 3MF merge distance at 0.999 and 1.001 of it. It drives every check in the list through the gate's run with stand-in renders, and checks that a clean run rendered and examined everything the policy lists. The stand-ins record the SCAD file, the output file, the parameters and the expected notes of each render, and the files measured and examined, and the tests check them. The real steps are tested separately on small inputs: the render function against a stand-in for OpenSCAD, the baseline and report files in a scratch folder, and the command line through `main`.
+- `mutation_test.py` disables each check in the list in a copy, one at a time, and checks that `gate_test.py` fails; it also breaks the measuring tools and the real steps. It fails when any mutation survives.
+- `selftest.py` runs both and then the gate against a known-bad version of the generator kept in `analysis/fixtures/`. That run must fail, and must report each failure `selftest.py` lists, so a check in that list that stopped working on real renders is noticed. The fixture cannot show the Unit tests, Customizer, Generator unchanged, Reference coverage, Configuration coverage, Render success and Relock rules rows; those rest on `gate_test.py`.
 
 ## Gate 2: adversarial review
 
@@ -95,7 +96,7 @@ Reviewers are subagents with fresh context, four per round.
 - **R1** reproduces the Gate 1 metrics from scratch with its own code.
 - **R2** audits feature meaning with its own sections and queries: what each part of the geometry is for, and whether the generator gets it right.
 - **R3** fuzzes configurations away from the references, looking for broken meshes and implausible geometry.
-- **R4** reviews what is signed off besides the geometry: the Customizer text, the headline of each `DEVIATIONS.md` entry, `VERIFICATION.md` against the committed generator, and this document's account of the gate. It also tries to get a broken generator past the gate with real edits to a copy of the SCAD.
+- **R4** reviews what is signed off besides the geometry: the Customizer text, the shell's row in `README.md`, the headline of each `DEVIATIONS.md` entry, `VERIFICATION.md` against the committed generator, and this document's account of the gate. It also tries to get a broken generator past the gate with real edits to a copy of the SCAD.
 
 R1 to R3 are briefed to disprove the match. They receive the generator, the reference files and the limits, but not the implementation notes, the deviation claims or `VERIFICATION.md`.
 
