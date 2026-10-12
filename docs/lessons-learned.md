@@ -29,6 +29,8 @@ Mistakes and near misses from building the generators, each with its cause, the 
 - [Judge each condition of a decision in its own statement](#judge-each-condition-of-a-decision-in-its-own-statement)
 - [Compare text a program controls exactly, or do not check it](#compare-text-a-program-controls-exactly-or-do-not-check-it)
 - [A new check or coverage claim is a decision](#a-new-check-or-coverage-claim-is-a-decision)
+- [Measure a stated size on the part](#measure-a-stated-size-on-the-part)
+- [Name the code's list in a row, do not summarise it](#name-the-codes-list-in-a-row-do-not-summarise-it)
 
 ## Random sampling hides edge-shaped deviations
 
@@ -279,3 +281,23 @@ Mistakes and near misses from building the generators, each with its cause, the 
 **Rule:** state what a check compares and with what, never what that achieves. Adding a check, or a statement about what the gate's tests cover, is the owner's decision and is recorded with the pull request's other decisions.
 
 **Check:** the rows of "What the shell's gate checks" in `docs/verification-method.md` each state a comparison; the Decisions list of the shell's pull request.
+
+## Measure a stated size on the part
+
+**What happened:** `DEVIATIONS.md` said the notch under the middle of a pad side is 9.2 mm wide at the pad's face. That figure is twice a constant in the notch's module: the width at which its two slanted planes would meet the face at z 0. The pad's 0.4 mm bottom chamfer removes that edge, and on the part the notch is 8.0 mm wide at the lower edge of the face. The sentence stood through every review round until two reviewers measured the notch itself.
+
+**Cause:** the size was worked out from the construction and written as a size of the part. A later cut changes the part and leaves the construction's constants as they were.
+
+**Rule:** a size in a record is measured on a render, and on the reference where one exists, at a place the sentence names.
+
+**Check:** `DEVIATIONS.md` P1, "Left out of the pad", says where on the pad the notch's width is taken.
+
+## Name the code's list in a row, do not summarise it
+
+**What happened:** the shell gate's "Console output" row named the list of patterns in `policy.py` and then summarised it: every word fixed, every number free. One pattern fixes a number, the count of volumes. The "3MF merges" row described the merge and left out one step: a triangle the merge collapses is dropped before the edges are counted, and the comparison as the row worded it fails sound exports. Both rows had passed a statement-by-statement check before the commit.
+
+**Cause:** a summary of code is a second copy of it in looser words, and it is wrong wherever the words are less exact than the code.
+
+**Rule:** where a row can name the code's own list, it names the list and says nothing about what the list holds. Where a row describes a procedure, it gives every step that changes the result.
+
+**Check:** the "Console output" and "3MF merges" rows of "What the shell's gate checks" in `docs/verification-method.md`.

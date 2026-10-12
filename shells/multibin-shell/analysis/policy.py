@@ -31,10 +31,12 @@ CORNER_TOL = 1e-7
 # how far outside a triangle, as a fraction of its size, an edge may pass and
 # still count as crossing it; this only absorbs rounding
 BARY_TOL = 1e-10
-# vertex merge distances for the 3MF check, in mm. A 3MF file stores 32-bit
-# coordinates, whose step is about 0.000001 mm at 10 mm from the origin and
-# 0.00006 mm at 550 mm: the smaller distance is 10 times the step near the
-# origin, and far from the origin only the larger one can join two positions
+# vertex merge distances for the 3MF check, in mm. OpenSCAD 2021.01 writes a
+# 3MF's coordinates as text in millionths of a millimetre, kept to the
+# significant digits of a 32-bit number: neighbouring values are 0.000001 mm
+# apart up to 16.7 mm from the origin and 0.000064 mm apart at 550 mm. The
+# smaller distance is 10 times the step near the origin, and far from the
+# origin only the larger one can join two positions
 MERGE_TOLS = (1e-5, 1e-4)
 # STL renders are binary, which keeps 32-bit coordinates. OpenSCAD's default
 # ASCII STL keeps six significant digits, 0.001 mm beyond 100 mm from the origin
@@ -119,8 +121,9 @@ SOUNDNESS = (
 # enough from the origin for rounding to split faces placed from opposite wall faces
 THREEMF_CHECK = ("thin_1.5x0.5x1", "half_both_2.5x1.5x1.5", "wide_4x1x1")
 
-# Sizes the sliders cannot produce: (name, parameters, the error that must stop
-# the render). For each size there is a value just off a step (beyond the
+# Sizes the sliders cannot produce: (name, parameters, the error text). The
+# gate requires each such render to write no file and to print that text in
+# quotation marks. For each size there is a value just off a step (beyond the
 # rounding margin of 0.0000005 LU), a value halfway between two steps, the step
 # below the slider's minimum and the step above its maximum; and one value that
 # is not a number. OpenSCAD prints a rejected value to six significant digits.

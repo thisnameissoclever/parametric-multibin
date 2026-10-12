@@ -53,7 +53,7 @@ The shell's gate is the current design, described below. The drawer's gate preda
 
 ### What the shell's gate checks
 
-This list is closed: `regress.CHECKS` holds the same names, and `analysis/policy.py` holds the limits and lists. Each row states a comparison the gate makes on its renders of the references, configurations and rejected sizes the policy lists. A row claims nothing about any other size, and nothing about what the comparison implies. Adding or removing a check means changing this document, and is the owner's decision.
+This list is closed: `regress.CHECKS` holds the same names, and `analysis/policy.py` holds the limits and lists. Each row states a comparison the gate makes on its renders of the references, configurations and rejected sizes the policy lists. A row claims nothing about any other size or combination of walls, and nothing about what the comparison implies. A relock is a run with `--update-baseline`. Every other run is a plain run, including one that `--scad` points at a copy of the generator. Adding or removing a check means changing this document, and is the owner's decision.
 
 | Check | What is compared |
 |---|---|
@@ -63,26 +63,27 @@ This list is closed: `regress.CHECKS` holds the same names, and `analysis/policy
 | Reference coverage | Every reference in the policy's list must have its file. In a plain run the references in the baseline must also be exactly that list. |
 | Configuration coverage | In a plain run the configurations in the baseline must be exactly the policy's list of configurations. |
 | Render success | Each render of a reference or a configuration, STL or 3MF, must write its file. |
-| Console output | For each such render, the text OpenSCAD writes to standard error must be exactly the notes the policy expects of that configuration (none for a reference), each echoed on its own line and in order, followed by one line matching each pattern of `policy.CONSOLE_STATISTICS`, in order, with nothing before, between or after. The patterns fix every word of OpenSCAD's statistics lines and leave their numbers free. Standard output must be empty. The text is compared whole, after each CR LF pair is turned into LF. |
+| Console output | For each such render, the text OpenSCAD writes to standard error must be exactly the notes the policy expects of that configuration (none for a reference), each echoed on its own line and in order, followed by one line matching each pattern of `policy.CONSOLE_STATISTICS`, in order, with nothing before, between or after. Standard output must be empty. The text is compared whole, after each CR LF pair is turned into LF. |
 | Hard limits | Each reference's four measures must be within the Gate 1 limits: the bounding box and volume differences, the 99th percentile of the distances from 50,000 points sampled on each surface to the other, and the largest distance from those points and from every vertex. A measure that is not a number fails, and so does any other number of sampled points on either surface. |
 | Drift | In a plain run, each reference's four measures must be no more than 0.002 mm above the baseline's, or 0.01 for the volume percentage. A measure missing from the reference's baseline entry fails. |
 | Mesh soundness | Each STL's audit must show a watertight, consistently wound mesh of positive volume and one body, with every edge on exactly two faces and no facet written twice. |
 | Crossings | In each STL, the deepest crossing between two triangles that share at most one vertex must be no more than 0.001 mm. |
 | Shape lock | In a plain run, the SHA-256 digest of each STL's distinct vertex coordinates must equal the baseline's, and its volume must be within 0.01 mm3 of the baseline's. An STL whose baseline entry is missing, empty or not a table of values fails. |
 | 3MF coincident vertices | Each 3MF export must have no two vertices at identical coordinates. 3MF (3D Manufacturing Format) is a zipped mesh format that slicers read. |
-| 3MF merges | Each 3MF export, with vertices merged when they are within 0.00001 mm of each other, chains of such vertices included, and again within 0.0001 mm, must have every edge on exactly two triangles. |
+| 3MF merges | Each 3MF export is judged twice, with a merge distance of 0.00001 mm and again with 0.0001 mm. Vertices within the merge distance of each other are merged, chains of such vertices included. A triangle left with two corners on one merged vertex is dropped. Every edge of the triangles that remain must be on exactly two of them. |
 | Rejected sizes | Each render with a value from the policy's list of rejected sizes must write no file, and its console output must contain the policy's error text for that value in quotation marks. |
 | Relock rules | `--update-baseline` is refused together with `--scad`. It writes `baseline.json`, with the generator's digest, and `VERIFICATION.md` only when the run has no failure. Without `--accept-drift`, drift, a changed shape and a dropped reference or configuration, each measured against the entries of the baseline being replaced, are failures; a reference or configuration that baseline has no entry for is not compared. |
 
 ### What the gate does not see
 
-- Sizes it does not render. A fault that appears only at another size passes, and so does a wrongly accepted value that is not in the list of rejected sizes.
+- Sizes and combinations of wall kinds it does not render. A fault that appears only at another size, or only with other walls at a rendered size, passes, and so does a wrongly accepted value that is not in the list of rejected sizes.
 - The Customizer text: the slider and dropdown notes, the section titles and the descriptions. The gate does not read them. The policy records the ranges the generator is meant to accept, and the gate tests those only through the rejected sizes and through configurations at both ends of each range.
 - A change to an STL's faces that leaves every vertex where it was, the volume within 0.01 mm3 and the mesh sound; on a reference, also the four measures within their limits and drift.
 - Triangles that overlap while lying in one plane, such as a sliver folded back against its neighbour, and neighbours that share an edge, are not tested for crossing. Nor is a pair counted when one passes through the other only within 0.0000001 mm of a corner of the pierced triangle, or only at an end of the piercing edge.
 - Whether a reference file holds MultiBuild's original: the gate looks only for a file of the expected name and measures against what it holds.
 - A rejected render's console output is searched for its error text, not compared whole, and its standard output is not looked at.
-- Only the three sizes the policy lists are exported as 3MF.
+- Only the three configurations the policy lists are exported as 3MF, and all three are rendered with the generator's default walls, Topped Rail on every side.
+- What the generator builds anywhere but in the gate's own renders: under another version of OpenSCAD, or in preview. The gate also does not check that the file is plain ASCII, or that it uses no `import()`, `include` or `use`.
 
 ### The gate's own tests
 
@@ -105,8 +106,8 @@ R1 to R3 are briefed to disprove the match. They receive the generator, the refe
 
 Every reviewer grades each finding:
 
-- **S1, blocking.** One of three kinds. A geometry fault: a reference over a Gate 1 limit, an export at an accepted size that fails the mesh soundness or crossing check, or a feature that stops a drawer, clip or rail from fitting. A demonstrated bypass: a concrete edit to the SCAD that the gate passes although it has a defect of a kind the list above says the gate catches. Or a false statement in something that is signed off, as listed under R4.
-- **S2, fix.** A wrong secondary number or wording in evidence text, an undefined term, an artifact at a new size in a class a `DEVIATIONS.md` entry already covers, a break to the gate's own code that its unit tests miss, whether or not it turns a check off, or a judgement call about a size MultiBuild does not publish, which goes to the owner as a decision.
+- **S1, blocking.** One of three kinds. A geometry fault: a reference over a Gate 1 limit, an export at an accepted size that fails the mesh soundness or crossing check, or a feature that stops a drawer, clip or rail from fitting. A demonstrated bypass: a concrete edit to the SCAD that the gate passes although it has a defect of a kind the list above says the gate catches. Or a false statement in something that is signed off, as listed under R4. In this document's account of the gate, only an overtly inaccurate statement is blocking: one that gives a check, a limit or a list the code does not have, or that would lead a reader to expect the gate to fail a defect in the generator's output that it passes.
+- **S2, fix.** A wrong secondary number or wording in evidence text, an undefined term, an inexact statement in this document's account of the gate (one that leaves out a step, or is looser or stricter than the code, while no defect in the generator's output passes because of the difference), an artifact at a new size in a class a `DEVIATIONS.md` entry already covers, a break to the gate's own code that its unit tests miss, whether or not it turns a check off, or a judgement call about a size MultiBuild does not publish, which goes to the owner as a decision.
 - **S3, log.** Style, wording in `docs/lessons-learned.md` unless it is false about a tool, and a risk nobody has reproduced.
 
 A reviewer's result stands for as long as the generator's digest, as the gate takes it, is unchanged: R1, R2 and R3 do not rerun for a commit that leaves it unchanged.
