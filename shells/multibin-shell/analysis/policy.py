@@ -34,7 +34,7 @@ BARY_TOL = 1e-10
 # vertex merge distances for the 3MF check, in mm. OpenSCAD 2021.01 writes a
 # 3MF's coordinates as text in millionths of a millimetre, kept to the
 # significant digits of a 32-bit number: neighbouring values are 0.000001 mm
-# apart up to 16.7 mm from the origin and 0.000064 mm apart at 550 mm. The
+# apart up to 16 mm from the origin and 0.000064 mm apart at 550 mm. The
 # smaller distance is 10 times the step near the origin, and far from the
 # origin only the larger one can join two positions
 MERGE_TOLS = (1e-5, 1e-4)

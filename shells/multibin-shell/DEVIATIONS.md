@@ -1,6 +1,6 @@
 # DEVIATIONS - known differences between the remake and MultiBuild's shells
 
-This file lists every known difference between `MultiBin Shell - Parametric.scad` and MultiBuild's shell STL files, and every rule the generator applies where MultiBuild publishes no example. Sizes are in LU, MultiBoard's 50 mm layout unit, written width x front-to-back x height as printed.
+This file lists every known difference between `MultiBin Shell - Parametric.scad` and MultiBuild's shell STL files, and every rule the generator applies where MultiBuild publishes no example. A difference under 0.001 mm has no entry of its own: the largest known is at the shell's outer corner faces, which sit 0.0003 mm inside the references' because their chamfer leg (`c_out`) is the references' 8.7365 mm rounded to 0.001 mm. Sizes are in LU, MultiBoard's 50 mm layout unit, written width x front-to-back x height as printed.
 
 Each entry gives the difference and its size, its cause, why it stays, and one check. The checks run from the `analysis` folder with the repository's Python environment, `..\..\..\.venv\Scripts\python.exe`, written below as `python`. `python compare.py KEY` renders a reference configuration to `.local-build\out\shell\KEY.stl` at the repository root, which is `..\..\..\.local-build\out\shell\KEY.stl` from the `analysis` folder, and prints how far it is from the reference. The reference files live in the folder that `local-paths.json` names for `shell` (see `tools/mbpaths.py`).
 
@@ -24,7 +24,7 @@ Entries starting with M are measured surface differences, Q entries are quirks o
 
 **Cause.** A chord across one facet sits r (1 - cos(180 / 32)) inside the true circle: 0.017 mm at the thread's radius of 3.5 mm, and 0.011 mm at 2.25 mm. On the thread the largest distances are 0.002 mm more than that chord figure; what adds them has not been isolated.
 
-**Left as is.** The threads dominate render time, and finer facets would slow every render for a difference under a tenth of a 0.2 mm print layer.
+**Left as is.** Finer facets would slow every render for a difference under a tenth of a 0.2 mm print layer. Observed 2026-10-12 with OpenSCAD 2021.01 on a Windows 11 desktop running other renders at the same time: a 1 x 1 x 1 shell took about 24 s to render with 32 facets per turn and about 37 s with 64.
 
 **Check.** After `python compare.py T212`, `python worst_points.py T212 ..\..\..\.local-build\out\shell\T212.stl` lists the worst points in each direction: the render's vertices at 0.0168 and the reference's at 0.0188 are beside threaded holes, and the reference's at 0.0187 are slit ends of side clip pockets (M3). Adding `--away-from-holes --below 0.011` lists the render's slit ends, at 0.0100, and the reference's vertices on the pocket heads, at 0.0108.
 
@@ -33,7 +33,7 @@ Entries starting with M are measured surface differences, Q entries are quirks o
 **Difference.** The generator's exports contain small artifacts that the references do not. None changes the shape by more than 0.001 mm, and every edge stays shared by exactly two triangles.
 
 - Zero-area triangles, whose three corners lie on one line, where a face's edge meets a vertex of a neighbouring face.
-- Slivers and pairs of separate vertices less than 0.0001 mm apart, where the edges of two cuts meet at almost the same point. Some slivers fold back against a neighbouring triangle. Far from the origin the rounding of coordinates on export can turn a zero-area triangle into such a fold, about 0.0001 mm2 in area or less. Both the binary STL and the 3MF export (3D Manufacturing Format, a zipped mesh format that slicers read) keep 24 significant binary digits of each coordinate, so neighbouring values are about 0.00006 mm apart at 550 mm from the origin. The 3MF export of a shell 12 LU wide has two folds in each pad of its last column, at z 3.2 around x 550, and the binary STL of the 12 x 1 x 1 shell has the same two.
+- Slivers and pairs of separate vertices less than 0.0001 mm apart, where the edges of two cuts meet at almost the same point. Some slivers fold back against a neighbouring triangle. Far from the origin the rounding of coordinates on export can turn a zero-area triangle into such a fold, about 0.0001 mm2 in area or less. Both the binary STL and the 3MF export (3D Manufacturing Format, a zipped mesh format that slicers read) keep at most 24 significant binary digits of each coordinate, so neighbouring values are about 0.00006 mm apart at 550 mm from the origin. The 3MF export of a shell 12 LU wide has two folds in each pad of its last column, at z 3.2 around x 550, and the binary STL of the 12 x 1 x 1 shell has the same two.
 - A step 0.001 mm tall where a loft (a solid that blends one cross-section into another, such as a chamfer) meets the solid that continues it.
 - Pairs of triangles that touch, or cross each other by less than 0.0001 mm.
 
