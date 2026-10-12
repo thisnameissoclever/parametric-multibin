@@ -83,7 +83,7 @@ This list is closed: `regress.CHECKS` holds the same names, and `analysis/policy
 - Whether a reference file holds MultiBuild's original: the gate looks only for a file of the expected name and measures against what it holds.
 - A rejected render's console output is searched for its error text, not compared whole, and its standard output is not looked at.
 - Only the three configurations the policy lists are exported as 3MF, and all three are rendered with the generator's default walls, Topped Rail on every side.
-- How long a render takes. The gate records each render's seconds and compares them with nothing. A render that runs past the 3600 s the gate allows stops the run with an error instead of a failure line.
+- How long a render takes. The gate compares no render's time with anything. A render that runs past the 3600 s the gate allows stops the run with an error instead of a failure line.
 - What the generator builds anywhere but in the gate's own renders: under another version of OpenSCAD, or in preview. The gate also does not check that the file is plain ASCII, or that it uses no `import()`, `include` or `use`.
 
 ### The gate's own tests
