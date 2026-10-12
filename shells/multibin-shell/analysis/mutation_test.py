@@ -1,0 +1,433 @@
+"""Break the gate one way at a time, in a copy under
+.local-build/out/shell/mutation_tree, and require gate_test.py to fail for each
+break.
+
+The breaks are the hand-picked list below. Every check in regress.CHECKS has at
+least one entry, and this script fails if one has none; the entries marked
+"tools" break the measuring tools, the render function, values in the policy
+and the real steps. The script first runs gate_test.py on an unchanged copy and
+stops if that fails, since a failing start would count every break as caught.
+A break whose text is no longer in the code counts as a failure too, so this
+list has to be kept in step with the gate's code.
+
+Usage: python mutation_test.py     (a few minutes; exits 1 on any survivor)
+"""
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import regress
+
+SRC = Path(__file__).resolve().parent
+REPO = SRC.parents[2]
+TREE = REPO / ".local-build" / "out" / "shell" / "mutation_tree"
+ANA = TREE / "shells" / "multibin-shell" / "analysis"
+
+# (check in regress.CHECKS, or "tools"; what the break does; file; text; replacement)
+MUTATIONS = [
+    ("unit tests", "the run starts although gate_test.py fails", "regress.py",
+     "    if not steps.unit_tests():", "    if False:"),
+    ("unit tests", "the real unit test step always passes", "regress.py",
+     "        return r.returncode == 0", "        return True"),
+    ("unit tests", "the real unit test step runs even from inside the unit tests", "regress.py",
+     "        if os.environ.get(NESTED):\n            return False\n", ""),
+    ("unit tests", "the real unit test step does not mark the tests' environment", "regress.py",
+     'cwd=HERE,\n                           env=dict(os.environ, **{NESTED: "1"}))', "cwd=HERE)"),
+
+    ("locked generator", "a baseline locked on another generator passes", "regress.py",
+     "    if locked != digest:", "    if False:"),
+    ("locked generator", "a VERIFICATION.md for another generator passes", "regress.py",
+     "    if reported != digest:", "    if False:"),
+    ("locked generator", "the report's digest is checked only when the baseline's is wrong", "regress.py",
+     "    if reported != digest:", "    if reported != digest and out:"),
+    ("locked generator", "the real report step never reads the report", "regress.py",
+     "        return report_digest(REPORT)", "        return None"),
+    ("locked generator", "the real baseline step loads nothing", "regress.py",
+     'return json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else None', "return None"),
+    ("generator unchanged", "a generator edited during the run passes", "regress.py",
+     "    if steps.digest(scad) != digest:", "    if False:"),
+
+    ("reference coverage", "a missing reference file passes", "regress.py",
+     '    out = [f"{k}: reference file missing: {fname(k)}" for k in missing]', "    out = []"),
+    ("reference coverage", "a relock skips a missing reference file", "regress.py",
+     "    if update:\n        return out\n", "    if update:\n        return []\n"),
+    ("reference coverage", "a baseline reference outside the policy passes", "regress.py",
+     "for k in models if k not in REFERENCES]", "for k in models if False]"),
+    ("reference coverage", "a reference absent from the baseline passes", "regress.py",
+     "        if k not in models:\n            out.append(f\"{k}: absent from baseline", "        if False:\n            out.append(f\"{k}: absent from baseline"),
+    ("reference coverage", "a reference with a missing file is reported twice", "regress.py",
+     "        if k in missing:\n            continue            # already reported as a missing file\n", ""),
+    ("reference coverage", "the run measures only the first reference", "regress.py",
+     "    for key in present:", "    for key in present[:1]:"),
+    ("configuration coverage", "a configuration absent from the baseline passes", "regress.py",
+     'golden.get(name, "absent")', "golden.get(name)"),
+    ("configuration coverage", "a baseline configuration outside the policy passes", "regress.py",
+     "            if n not in names]", "            if False]"),
+    ("configuration coverage", "the run renders every configuration with no parameters", "regress.py",
+     '        notes = EXPECTED_MESSAGES.get(name, ())\n        r = steps.render(scad, f"soundness/{name}.stl", params)',
+     '        notes = EXPECTED_MESSAGES.get(name, ())\n        r = steps.render(scad, f"soundness/{name}.stl", {})'),
+    ("configuration coverage", "the run renders only the first three configurations", "regress.py",
+     "    for name, params in SOUNDNESS:", "    for name, params in SOUNDNESS[:3]:"),
+
+    ("render success", "a failed reference render passes", "regress.py",
+     'failures.append(f"{key}: render failed")', "pass"),
+    ("render success", "a failed configuration render passes", "regress.py",
+     'failures.append(f"soundness/{name}: render failed")', "pass"),
+    ("render success", "a failed 3MF render passes", "regress.py",
+     'failures.append(f"soundness/{name}: 3MF render failed")', "pass"),
+
+    ("console output", "a reference render's console output is not compared", "regress.py",
+     'failures += console_failures(key, r["console"], r["stdout"], ())', "pass"),
+    ("console output", "a configuration render's console output is not compared", "regress.py",
+     'failures += console_failures(f"soundness/{name}", r["console"], r["stdout"], notes)', "pass"),
+    ("console output", "a 3MF render's console output is not compared", "regress.py",
+     'failures += console_failures(f"soundness/{name} 3MF", r["console"], r["stdout"], notes)', "pass"),
+    ("console output", "a configuration is not expected to echo its notes", "regress.py",
+     'failures += console_failures(f"soundness/{name}", r["console"], r["stdout"], notes)',
+     'failures += console_failures(f"soundness/{name}", r["console"], r["stdout"], ())'),
+    ("console output", "text after the expected console text passes", "regress.py",
+     '    if not re.fullmatch("".join(line + "\\n" for line in lines), console):',
+     '    if not re.match("".join(line + "\\n" for line in lines), console):'),
+    ("console output", "text before the expected console text passes", "regress.py",
+     '    if not re.fullmatch("".join(line + "\\n" for line in lines), console):',
+     '    if not re.search("".join(line + "\\n" for line in lines) + "$", console):'),
+    ("console output", "the console lines may come in any order and number", "regress.py",
+     '    if not re.fullmatch("".join(line + "\\n" for line in lines), console):',
+     '    if not re.fullmatch("(?:(?:" + "|".join(lines) + ")\\n)*", console):'),
+    ("console output", "the notes are not part of the expected console text", "regress.py",
+     """    lines = [re.escape(f'ECHO: "{note}"') for note in notes] + list(policy.CONSOLE_STATISTICS)""",
+     "    lines = list(policy.CONSOLE_STATISTICS)"),
+    ("console output", "a note's punctuation matches any character", "regress.py",
+     """[re.escape(f'ECHO: "{note}"') for note in notes]""", """[f'ECHO: "{note}"' for note in notes]"""),
+    ("console output", "standard output is not looked at", "regress.py", '    if stdout != "":', "    if False:"),
+    ("console output", "a statistics number may be followed by anything", "policy.py",
+     'r"   Vertices: +[0-9]+",', 'r"   Vertices: +[0-9]+.*",'),
+    ("console output", "a statistics number may be any text", "policy.py",
+     'r"   Halfedges: +[0-9]+",', 'r"   Halfedges: +.+",'),
+    ("console output", "a render that is not simple is allowed", "policy.py",
+     'r"   Simple:        yes",', 'r"   Simple:        (yes|no)",'),
+    ("console output", "any number of volumes is allowed", "policy.py",
+     'r"   Volumes:         2",', 'r"   Volumes: +[0-9]+",'),
+    ("console output", "the render keeps only the end of the console output", "compare.py",
+     "console=as_written(r.stderr), stdout=as_written(r.stdout))",
+     "console=as_written(r.stderr)[-3000:], stdout=as_written(r.stdout))"),
+    ("console output", "the render reports nothing from standard output", "compare.py",
+     "console=as_written(r.stderr), stdout=as_written(r.stdout))", 'console=as_written(r.stderr), stdout="")'),
+    ("console output", "the render drops every carriage return", "compare.py",
+     r'.replace("\r\n", "\n")', r'.replace("\r", "")'),
+    ("console output", "the render strips the console text", "compare.py",
+     r'return raw.decode("utf-8", errors="replace").replace("\r\n", "\n")',
+     r'return raw.decode("utf-8", errors="replace").replace("\r\n", "\n").strip() + "\n"'),
+
+    ("hard limits", "the run ignores the hard limits", "regress.py",
+     "failures += hard_failures(key, m) + sample_failures(key, row) + soundness_failures(key, a)",
+     "failures += sample_failures(key, row) + soundness_failures(key, a)"),
+    ("hard limits", "a metric that is not a number passes the limits", "regress.py",
+     "            if not m[field] <= limit]", "            if m[field] > limit]"),
+    ("hard limits", "the run measures the reference file against itself", "regress.py",
+     'row = steps.measure(key, r["path"])', "row = steps.measure(key, refs.STL_DIR / fname(key))"),
+    ("hard limits", "the run renders every reference with the first one's parameters", "regress.py",
+     'r = steps.render(scad, f"{key}.stl", compare.params(key))',
+     'r = steps.render(scad, f"{key}.stl", compare.params(present[0]))'),
+    ("hard limits", "the run ignores the sample count", "regress.py",
+     "failures += hard_failures(key, m) + sample_failures(key, row) + soundness_failures(key, a)",
+     "failures += hard_failures(key, m) + soundness_failures(key, a)"),
+    ("hard limits", "only the samples drawn on the render are counted", "regress.py",
+     "    return [] if n == wanted else [", "    return [] if n and n[-1] == policy.N_SAMPLES else ["),
+    ("hard limits", "measure reports one direction's sample count for both", "compare.py",
+     '        row["samples"].append(int(len(pts)))', '        row["samples"] = [int(len(pts))] * 2'),
+    ("drift", "the run ignores drift", "regress.py", "            failures += drift_failures(key, m, was)", "            pass"),
+    ("drift", "a metric that is not a number passes the drift check", "regress.py",
+     "        if not now[field] - was[field] <= tol:", "        if now[field] - was[field] > tol:"),
+    ("drift", "a locked metric missing from the baseline is skipped", "regress.py",
+     '            out.append(f"{key}: DRIFT {field}: no locked value in the baseline")\n', ""),
+    ("drift", "a reference with an empty baseline entry is skipped", "regress.py",
+     "        if key in models:\n            was = models[key]", "        if models.get(key):\n            was = models[key]"),
+    ("drift", "a baseline entry that is not a table of values is used as it is", "regress.py",
+     "    return {name: entry if isinstance(entry, dict) else {} for name, entry in base.get(kind, {}).items()}",
+     "    return dict(base.get(kind, {}))"),
+    ("shape lock", "a baseline entry that is null is left out of the comparison", "regress.py",
+     "    return {name: entry if isinstance(entry, dict) else {} for name, entry in base.get(kind, {}).items()}",
+     "    return {name: entry for name, entry in base.get(kind, {}).items() if entry is not None}"),
+
+    ("mesh soundness", "an unsound mesh passes", "regress.py",
+     "    return [] if clean(a) else [", "    return [] if True else ["),
+    ("mesh soundness", "the run ignores an unsound reference", "regress.py",
+     "failures += hard_failures(key, m) + sample_failures(key, row) + soundness_failures(key, a)",
+     "failures += hard_failures(key, m) + sample_failures(key, row)"),
+    ("mesh soundness", "a mesh with reasons against it counts as sound", "compare.py",
+     "    return not unsound_reasons(a)", "    return True"),
+    ("mesh soundness", "watertightness is not judged", "compare.py", '    if not a["watertight"]:', "    if False:"),
+    ("mesh soundness", "winding is not judged", "compare.py", '    if not a["winding"]:', "    if False:"),
+    ("mesh soundness", "a volume of zero counts as positive", "compare.py",
+     '    if not a["volume"] > 0:', '    if not a["volume"] >= 0:'),
+    ("mesh soundness", "the number of bodies is not judged", "compare.py", '    if a["bodies"] != 1:', "    if False:"),
+    ("mesh soundness", "edges off two faces are not judged", "compare.py", '    if a["bad_edges"]:', "    if False:"),
+    ("mesh soundness", "duplicated facets are not judged", "compare.py", '    if a["dup_faces"]:', "    if False:"),
+    ("mesh soundness", "the audit counts only edges with too many faces", "compare.py",
+     "bad_edges=int((per_edge != 2).sum())", "bad_edges=int((per_edge > 2).sum())"),
+    ("mesh soundness", "a facet written twice in another corner order is not counted", "compare.py",
+     "np.unique(np.sort(f, axis=1), axis=0, return_counts=True)", "np.unique(f, axis=0, return_counts=True)"),
+    ("mesh soundness", "the audit reports a volume's size without its sign", "compare.py",
+     "volume=round(float(m.volume), 3)", "volume=round(abs(float(m.volume)), 3)"),
+    ("crossings", "crossings are not judged", "compare.py",
+     '    if not a["crossing_depth"] <= policy.CROSSING_LIMIT:', "    if False:"),
+    ("crossings", "crossings are looked for from the first triangle of a pair only", "export_check.py",
+     "    for A, B in ((I, J), (J, I)):", "    for A, B in ((I, J),):"),
+    ("crossings", "crossings are looked for from the second triangle of a pair only", "export_check.py",
+     "    for A, B in ((I, J), (J, I)):", "    for A, B in ((J, I),):"),
+    ("crossings", "a triangle's third edge is not tested", "export_check.py",
+     "        for k in range(3):", "        for k in range(2):"),
+    ("crossings", "the crossing test finds nothing", "export_check.py",
+     "    return ok & (u > -tol)", "    return ok & False & (u > -tol)"),
+    ("crossings", "crossings count only strict interior hits", "export_check.py",
+     "(u > -tol) & (w > -tol) & (u + w < 1 + tol)", "(u > tol) & (w > tol) & (u + w < 1 - tol)"),
+    ("crossings", "an edge that ends near a face is not a crossing", "export_check.py",
+     "(t > tol) & (t < 1 - tol)", "(t > 0.01) & (t < 0.99)"),
+    ("crossings", "zero-area triangles skip the crossing depth", "export_check.py",
+     "d = [x for x in (depth(ta, tb), depth(tb, ta)) if x is not None]",
+     "d = [depth(ta, tb)] if depth(ta, tb) is not None else []"),
+
+    ("shape lock", "a changed shape passes", "regress.py", "    if changed:\n        de = ", "    if False:\n        de = "),
+    ("shape lock", "the lock ignores the vertex digest", "regress.py",
+     '    if a["digest"] != was["digest"]:', "    if False:"),
+    ("shape lock", "the lock ignores the volume", "regress.py", "    if abs(dv) > policy.SOUND_VOL:", "    if False:"),
+    ("shape lock", "a shape whose vertices and volume both changed passes", "regress.py",
+     "    if changed:\n        de = ", "    if len(changed) == 1:\n        de = "),
+    ("shape lock", "an empty baseline entry counts as locked", "regress.py",
+     '    if was == "absent" or "digest" not in was:', '    if was == "absent":'),
+    ("shape lock", "the references' shapes are not locked", "regress.py",
+     "            failures += lock_failures(key, a, was)", "            pass"),
+    ("shape lock", "a relock ignores a reference's changed shape", "regress.py",
+     "            out += lock_failures(key, m, models[key])", "            pass"),
+    ("shape lock", "a relock ignores a configuration's changed shape", "regress.py",
+     '            out += lock_failures(f"soundness/{name}", a, sound[name])', "            pass"),
+    ("shape lock", "the digest covers part of the vertices", "compare.py",
+     "return hashlib.sha256(np.ascontiguousarray(vs).tobytes()).hexdigest()",
+     "return hashlib.sha256(np.ascontiguousarray(vs[:3]).tobytes()).hexdigest()"),
+    ("shape lock", "the digest leaves out the z coordinates", "compare.py",
+     'vs = np.unique(np.asarray(v, dtype="<f8"), axis=0)', 'vs = np.unique(np.asarray(v, dtype="<f8")[:, :2], axis=0)'),
+
+    ("3MF coincident vertices", "coincident 3MF vertices pass", "regress.py", "    if groups:", "    if False:"),
+    ("3MF coincident vertices", "one group of coincident vertices passes", "regress.py",
+     "    if groups:", "    if groups > 1:"),
+    ("3MF coincident vertices", "the coincidence count is always zero", "export_check.py",
+     "    return sum(1 for n in Counter(tuple(float(c) + 0.0 for c in v) for v in coords).values() if n > 1)",
+     "    return 0"),
+    ("3MF coincident vertices", "coordinates are compared as text", "export_check.py",
+     "Counter(tuple(float(c) + 0.0 for c in v) for v in coords)", "Counter(coords)"),
+    ("3MF merges", "edges broken by a merge pass", "regress.py", "        if edges:", "        if False:"),
+    ("3MF merges", "one edge left by a merge passes", "regress.py", "        if edges:", "        if edges > 1:"),
+    ("3MF merges", "only the first merge distance that fails is reported", "regress.py",
+     '                       f"not shared by exactly two triangles")\n', '                       f"not shared by exactly two triangles")\n            break\n'),
+    ("3MF merges", "the merge count is always zero", "export_check.py",
+     "    return int((count != 2).sum())", "    return 0"),
+    ("3MF merges", "the merge reaches only 0.99 of its distance", "export_check.py",
+     "query_pairs(tol)", "query_pairs(tol * 0.99)"),
+    ("3MF merges", "the merge reaches 1.01 times its distance", "export_check.py",
+     "query_pairs(tol)", "query_pairs(tol * 1.01)"),
+    ("3MF merges", "the real merge step uses only the first distance", "regress.py",
+     "return {tol: merge_faults(path, tol) for tol in policy.MERGE_TOLS}",
+     "return {tol: merge_faults(path, tol) for tol in policy.MERGE_TOLS[:1]}"),
+    ("3MF merges", "the run exports every 3MF with no parameters", "regress.py",
+     'r = steps.render(scad, f"soundness/{name}.3mf", params)', 'r = steps.render(scad, f"soundness/{name}.3mf", {})'),
+    ("3MF merges", "the run checks only the first 3MF configuration", "regress.py",
+     "        if name in THREEMF_CHECK:", "        if name in THREEMF_CHECK[:1]:"),
+    ("3MF merges", "the 3MF reader accepts an empty mesh", "export_check.py",
+     "    if not coords or not tri:", "    if False:"),
+
+    ("rejected sizes", "a size that is not rejected passes", "regress.py",
+     "        failures += found\n        log(f\"  {name:24} {'NOT REJECTED'", "        log(f\"  {name:24} {'NOT REJECTED'"),
+    ("rejected sizes", "a rejected size may write a file", "regress.py", "    if path is not None:", "    if False:"),
+    ("rejected sizes", "any failed render counts as a rejection", "regress.py", "    if not stopped:", "    if False:"),
+    ("rejected sizes", "a size that writes a file and prints no error counts as rejected", "regress.py",
+     "    return out\n\n\ndef locked_generator_failures", "    return out if len(out) == 1 else []\n\n\ndef locked_generator_failures"),
+    ("rejected sizes", "the error text is not looked for", "regress.py",
+     'rejection_failures(name, r["path"], stopped_with(r["console"], error), error)',
+     'rejection_failures(name, r["path"], True, error)'),
+    ("rejected sizes", "the start of an error text counts as the whole of it", "regress.py",
+     """    return f'"{error}"' in console""", "    return error in console"),
+    ("rejected sizes", "the run renders every rejected size with no parameters", "regress.py",
+     '    for name, params, error in REJECTED:\n        r = steps.render(scad, f"soundness/{name}.stl", params)',
+     '    for name, params, error in REJECTED:\n        r = steps.render(scad, f"soundness/{name}.stl", {})'),
+    ("rejected sizes", "the run checks only the first rejected size", "regress.py",
+     "    for name, params, error in REJECTED:", "    for name, params, error in REJECTED[:1]:"),
+
+    ("relock rules", "a relock accepts changes without --accept-drift", "regress.py",
+     "        if changes and not accept:", "        if False:"),
+    ("relock rules", "a relock does not log the changes it accepts", "regress.py",
+     "        elif changes:", "        elif False:"),
+    ("relock rules", "a relock writes over failures", "regress.py",
+     '        if failures:\n            log(f"NOT RELOCKED', '        if False:\n            log(f"NOT RELOCKED'),
+    ("relock rules", "a relock is allowed from another SCAD", "regress.py",
+     "    if update and alternate:", "    if False:"),
+    ("relock rules", "a relock records no generator digest", "regress.py", ", scad_digest=digest))", "))"),
+    ("relock rules", "a relock writes no report", "regress.py",
+     "steps.write_report(report_text(rows, started, steps.now(), digest, steps.renderer()))", "pass"),
+    ("relock rules", "the report gets no rows", "regress.py",
+     '        rows.append(dict(row, key=key, seconds=r["seconds"]))', "        pass"),
+    ("relock rules", "a relock ignores a dropped reference", "regress.py",
+     "for k in models if k not in current]", "for k in models if False]"),
+    ("relock rules", "a relock ignores a dropped configuration", "regress.py",
+     "for n in sound if n not in sound_now]", "for n in sound if False]"),
+    ("relock rules", "the real baseline step writes nothing", "regress.py",
+     'BASELINE.write_text(json.dumps(data, indent=2), encoding="utf-8")', "pass"),
+    ("relock rules", "the real report step writes nothing", "regress.py",
+     'REPORT.write_text(text, encoding="utf-8")', "pass"),
+    ("relock rules", "the command line never relocks", "regress.py",
+     'update="--update-baseline" in argv', "update=False"),
+    ("relock rules", "the command line always accepts drift", "regress.py",
+     'accept="--accept-drift" in argv', "accept=True"),
+    ("relock rules", "the command line treats another SCAD as the generator", "regress.py",
+     'accept="--accept-drift" in argv, alternate=alternate)', 'accept="--accept-drift" in argv, alternate=False)'),
+
+    ("tools", "the references are rendered from the generator, not the SCAD file given", "regress.py",
+     '        r = steps.render(scad, f"{key}.stl", compare.params(key))',
+     '        r = steps.render(compare.SCAD, f"{key}.stl", compare.params(key))'),
+    ("tools", "the command line always checks the generator", "regress.py",
+     "scad = Path(argv[argv.index(\"--scad\") + 1]).resolve() if alternate else compare.SCAD", "scad = compare.SCAD"),
+    ("tools", "another SCAD file renders into the generator's folder", "compare.py",
+     '    d = OUT / "alt" / Path(scad).stem', "    d = OUT"),
+    ("tools", "the Simple Walls references get the other walls' file name", "refs.py",
+     '    if wall == "S":', "    if False:"),
+    ("tools", "every reference is rendered with topped walls", "compare.py",
+     'WALL_PARAM = {"T": "topped", "O": "topless", "S": "simple"}',
+     'WALL_PARAM = {"T": "topped", "O": "topped", "S": "topped"}'),
+    ("tools", "the limits are loosened tenfold", "policy.py",
+     "LIMITS = dict(bbox=0.02, vol=0.5, p99=0.05, mx=0.2)", "LIMITS = dict(bbox=0.2, vol=5.0, p99=0.5, mx=2.0)"),
+    ("tools", "the drift tolerance is loosened", "policy.py",
+     "DRIFT = dict(bbox=0.002, vol=0.01, p99=0.002, mx=0.002)", "DRIFT = dict(bbox=0.02, vol=0.1, p99=0.02, mx=0.02)"),
+    ("tools", "fewer samples are required", "policy.py", "N_SAMPLES = 50000", "N_SAMPLES = 500"),
+    ("tools", "the shape lock's volume tolerance is loosened", "policy.py", "SOUND_VOL = 0.01", "SOUND_VOL = 1000"),
+    ("tools", "the crossing corner exclusion is widened", "policy.py", "CORNER_TOL = 1e-7", "CORNER_TOL = 0.05"),
+    ("tools", "the crossing test accepts edges passing outside a face", "policy.py", "BARY_TOL = 1e-10", "BARY_TOL = 1e-3"),
+    ("tools", "renders are exported as ASCII STL", "policy.py",
+     'EXPORT_FORMAT = ("--export-format", "binstl")', 'EXPORT_FORMAT = ("--export-format", "asciistl")'),
+    ("tools", "a merge distance is dropped", "policy.py", "MERGE_TOLS = (1e-5, 1e-4)", "MERGE_TOLS = (1e-4,)"),
+    ("tools", "a 3MF configuration is dropped", "policy.py",
+     'THREEMF_CHECK = ("thin_1.5x0.5x1", "half_both_2.5x1.5x1.5", "wide_4x1x1")',
+     'THREEMF_CHECK = ("thin_1.5x0.5x1", "half_both_2.5x1.5x1.5")'),
+    ("tools", "a rejected size is dropped", "policy.py",
+     '    ("height_below", dict(height_lu=0), _error("height_lu", 0.5, "0")),\n', ""),
+    ("tools", "a rejection accepts any error text", "policy.py",
+     'return f"{name} must be a multiple of 0.5 from {lo} to 12, not {shown}"', 'return "ERROR"'),
+    ("tools", "the sampling seed changes", "policy.py", "SAMPLE_SEED = 7", "SAMPLE_SEED = 8"),
+    ("tools", "a recorded range changes in the policy", "policy.py",
+     "width_lu=(1.0, 0.5, 12.0), height_lu=(0.5, 0.5, 12.0)", "width_lu=(0.5, 0.1, 40.0), height_lu=(0.5, 0.5, 12.0)"),
+    ("tools", "the generator's defaults are no longer rendered", "policy.py", '    ("defaults", {}),\n', ""),
+    ("tools", "an expected note is dropped", "policy.py",
+     '        "NOTE: right_wall = topped has no effect: the side is shorter than 1 LU, so it has no rail channel."),',
+     "    ),"),
+    ("tools", "the render keeps a file from an earlier run", "compare.py",
+     "    if out.exists():\n        out.unlink()", "    if False:\n        out.unlink()"),
+    ("tools", "the render does not ask for binary STL", "compare.py",
+     ' *(policy.EXPORT_FORMAT if out.suffix.lower() == ".stl" else ()),', ""),
+    ("tools", "the render returns a path it never wrote", "compare.py",
+     "path=out if out.exists() else None", "path=out"),
+    ("tools", "the render drops the parameters", "compare.py", '        args += ["-D", f"{k}={v}"]', "        pass"),
+    ("tools", "the summary drops the vertex sweep", "compare.py",
+     'np.max([a["mx"], b["mx"], a["vmax"], b["vmax"]])', 'np.max([a["mx"], b["mx"]])'),
+    ("tools", "the summary drops the sampled maximum", "compare.py",
+     'np.max([a["mx"], b["mx"], a["vmax"], b["vmax"]])', 'np.max([a["vmax"], b["vmax"]])'),
+    ("tools", "the summary takes p99 from one direction", "compare.py", 'np.max([a["p99"], b["p99"]])', 'a["p99"]'),
+    ("tools", "the summary drops a value that is not a number", "compare.py",
+     'mx=float(np.max([a["mx"], b["mx"], a["vmax"], b["vmax"]])))',
+     'mx=float(max(a["mx"], b["mx"], a["vmax"], b["vmax"])))'),
+    ("tools", "measure ignores volume", "compare.py",
+     "vol=float(abs(gen.volume - ref.volume) / ref.volume * 100),", "vol=0.0,"),
+    ("tools", "measure lets a render smaller than its reference through", "compare.py",
+     "vol=float(abs(gen.volume - ref.volume) / ref.volume * 100),",
+     "vol=float((gen.volume - ref.volume) / ref.volume * 100),"),
+    ("tools", "measure takes the bounding box difference without its sign removed", "compare.py",
+     "bbox=float(np.abs(ref.extents - gen.extents).max())", "bbox=float((gen.extents - ref.extents).max())"),
+    ("tools", "measure compares the bounding box on one axis", "compare.py",
+     "bbox=float(np.abs(ref.extents - gen.extents).max())", "bbox=float(np.abs(ref.extents - gen.extents)[0])"),
+    ("tools", "measure aligns the meshes at their maximum corners", "compare.py",
+     "gen.apply_translation(ref.bounds[0] - gen.bounds[0])", "gen.apply_translation(ref.bounds[1] - gen.bounds[1])"),
+    ("tools", "measure samples both directions from the reference", "compare.py",
+     "pts, _ = trimesh.sample.sample_surface(a, n_samples, seed=policy.SAMPLE_SEED)",
+     "pts, _ = trimesh.sample.sample_surface(ref, n_samples, seed=policy.SAMPLE_SEED)"),
+    ("tools", "measure samples without its seed", "compare.py",
+     "sample_surface(a, n_samples, seed=policy.SAMPLE_SEED)", "sample_surface(a, n_samples)"),
+    ("tools", "measure's p99 is the 90th percentile", "compare.py",
+     "q = np.quantile(dist, [0.95, policy.P99])", "q = np.quantile(dist, [0.95, 0.9])"),
+    ("tools", "measure's sampled maximum is zeroed", "compare.py", "mx=float(dist.max()),", "mx=0.0,"),
+    ("tools", "measure's vertex sweep is zeroed", "compare.py", "vmax=float(vdist.max()))", "vmax=0.0)"),
+    ("tools", "measure draws fewer samples than the policy", "compare.py",
+     "n_samples = policy.N_SAMPLES if n_samples is None else n_samples",
+     "n_samples = 500 if n_samples is None else n_samples"),
+    ("tools", "metrics compares the render with itself", "compare.py",
+     "    ref = trimesh.load_mesh(refs.STL_DIR / fname(key))", "    ref = trimesh.load_mesh(gen_path)"),
+    ("tools", "the generator digest keeps Windows line endings", "compare.py",
+     r'.read_bytes().replace(b"\r\n", b"\n")', ".read_bytes()"),
+    ("tools", "the 3MF reader finds no vertices", "export_check.py",
+     "    if not coords or not tri:\n        raise", "    coords = []\n    if False:\n        raise"),
+    ("tools", "the merge merges nothing", "export_check.py",
+     "cKDTree(v).query_pairs(tol)", "cKDTree(v).query_pairs(0.0)"),
+    ("tools", "the real measure step drops volume and bounding box", "regress.py",
+     "        return compare.metrics(key, path, 0)", "        return dict(compare.metrics(key, path, 0), vol=0.0, bbox=0.0)"),
+    ("tools", "the real audit step drops the crossing depth", "regress.py",
+     "    def audit(self, path):\n        return compare.audit(path)",
+     "    def audit(self, path):\n        return dict(compare.audit(path), crossing_depth=0.0)"),
+    ("tools", "the real coverage step finds no missing reference", "regress.py",
+     "return [k for k in REFERENCES if not (refs.STL_DIR / fname(k)).is_file()]", "return []"),
+    ("tools", "the real render step writes to the wrong folder", "regress.py",
+     "compare.out_for(scad) / name", "compare.OUT / name"),
+    ("tools", "the real renderer step names no renderer", "regress.py",
+     "        return compare.openscad_version()", '        return ""'),
+    ("tools", "the report's digest is never read", "regress.py",
+     "    return found.group(1) if found else None", "    return None"),
+    ("tools", "the report leaves out the digest", "regress.py",
+     "SHA-256 {digest}, computed with CR LF", "SHA-256 (not recorded), computed with CR LF"),
+    ("tools", "the report shows the better direction's p99", "regress.py",
+     "{max(a['p99'], b['p99']):.4f}", "{min(a['p99'], b['p99']):.4f}"),
+    ("tools", "the report swaps the bounding box and volume columns", "regress.py",
+     "f\"| {r['key']} | {r['bbox']:.4f} | {r['vol']:.3f} |", "f\"| {r['key']} | {r['vol']:.4f} | {r['bbox']:.3f} |"),
+]
+
+
+def fresh_copy():
+    if TREE.exists():
+        shutil.rmtree(TREE)
+    shutil.copytree(REPO / "tools", TREE / "tools", ignore=shutil.ignore_patterns("__pycache__"))
+    if (REPO / "local-paths.json").exists():
+        shutil.copy(REPO / "local-paths.json", TREE / "local-paths.json")
+    shutil.copytree(SRC, ANA, ignore=shutil.ignore_patterns("frozen_*.scad", "__pycache__", "baseline.json"))
+
+
+def main():
+    unlisted = sorted(set(regress.CHECKS) - {m[0] for m in MUTATIONS})
+    unknown = sorted({m[0] for m in MUTATIONS} - set(regress.CHECKS) - {"tools"})
+    if unlisted or unknown:
+        print(f"checks with no mutation: {unlisted}; mutations for no known check: {unknown}")
+        return 1
+    # a gate_test.py that already fails would count every mutation as caught
+    fresh_copy()
+    if subprocess.run([sys.executable, "gate_test.py"], cwd=ANA, capture_output=True, text=True).returncode != 0:
+        print("gate_test.py fails without any mutation; fix it before testing mutations")
+        shutil.rmtree(TREE, ignore_errors=True)
+        return 1
+    survivors = []
+    for check, name, fname, old, new in MUTATIONS:
+        fresh_copy()
+        path = ANA / fname
+        s = path.read_text(encoding="utf-8")
+        if s.count(old) != 1:
+            print(f"  NOT APPLIED  [{check}] {name} (text found {s.count(old)} times)")
+            survivors.append(name)
+            continue
+        path.write_text(s.replace(old, new), encoding="utf-8")
+        r = subprocess.run([sys.executable, "gate_test.py"], cwd=ANA, capture_output=True, text=True)
+        caught = r.returncode != 0
+        print(f"  {'caught  ' if caught else 'SURVIVED'} [{check}] {name}")
+        if not caught:
+            survivors.append(name)
+    shutil.rmtree(TREE, ignore_errors=True)
+    print(f"{len(MUTATIONS) - len(survivors)} of {len(MUTATIONS)} mutations caught, "
+          f"covering all {len(regress.CHECKS)} checks")
+    return 1 if survivors else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
