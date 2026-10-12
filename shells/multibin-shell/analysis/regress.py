@@ -22,6 +22,7 @@ Usage:
 """
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -40,6 +41,8 @@ HERE = Path(__file__).resolve().parent
 BASELINE = HERE / "baseline.json"
 REPORT = compare.ROOT / "VERIFICATION.md"
 UNIT_TESTS = HERE / "gate_test.py"
+# set in the environment of the unit tests while the gate runs them
+NESTED = "MULTIBIN_SHELL_GATE_UNIT_TESTS"
 # what the baseline keeps of a reference render's audit, besides its metrics
 AUDIT_KEPT = ("watertight", "winding", "bodies", "bad_edges", "dup_faces", "crossing_depth",
               "digest", "volume", "extents")
@@ -90,9 +93,28 @@ def sample_failures(key, row):
 
 
 def drift_failures(key, now, was):
-    """A reference metric worse than its locked value by more than the drift tolerance."""
-    return [f"{key}: DRIFT {field} {was[field]:.4f} -> {now[field]:.4f}"
-            for field, tol in DRIFT.items() if not now[field] - was[field] <= tol]
+    """A reference metric worse than its locked value by more than the drift
+    tolerance, or with no locked value to compare with."""
+    out = []
+    for field, tol in DRIFT.items():
+        if field not in was:
+            out.append(f"{key}: DRIFT {field}: no locked value in the baseline")
+            continue
+        if not now[field] - was[field] <= tol:
+            out.append(f"{key}: DRIFT {field} {was[field]:.4f} -> {now[field]:.4f}")
+    return out
+
+
+def rejection_failures(name, path, stopped, error):
+    """A size the sliders cannot produce that the generator did not refuse.
+    Writing a file and not printing the error are judged separately: either
+    one is a failure."""
+    out = []
+    if path is not None:
+        out.append(f"rejected/{name}: expected the render to stop, and it wrote a file")
+    if not stopped:
+        out.append(f"rejected/{name}: expected the render to stop with: {error}")
+    return out
 
 
 def message_failures(label, problems, expected, seen):
@@ -109,15 +131,22 @@ def soundness_failures(label, a):
 
 def lock_failures(label, a, was):
     """A render that is not in the baseline, or whose shape changed since the
-    baseline was locked (was is None when relocking)."""
+    baseline was locked (was is None when relocking). The vertex digest and
+    the volume are judged separately: either one changing is a change."""
     if was is None:
         return []
     if was == "absent" or "digest" not in was:
         return [f"{label}: absent from baseline; relock to cover it"]
     dv = a["volume"] - was["volume"]
-    if a["digest"] != was["digest"] or abs(dv) > policy.SOUND_VOL:
+    changed = []
+    if a["digest"] != was["digest"]:
+        changed.append("vertices")
+    if abs(dv) > policy.SOUND_VOL:
+        changed.append("volume")
+    if changed:
         de = max(abs(x - y) for x, y in zip(a["extents"], was["extents"]))
-        return [f"{label}: geometry changed vs baseline (bbox {de:.4f} mm, volume {dv:+.3f} mm3)"]
+        return [f"{label}: geometry changed vs baseline ({' and '.join(changed)}; bbox {de:.4f} mm, "
+                f"volume {dv:+.3f} mm3)"]
     return []
 
 
@@ -159,8 +188,11 @@ def coverage_failures(missing, base, update, quick):
         return out
     models = base.get("models", {})
     out += [f"{k}: in the baseline but not in policy.REFERENCES" for k in models if k not in REFERENCES]
-    out += [f"{k}: absent from baseline; relock to cover it" for k in REFERENCES
-            if k not in missing and k not in models]
+    for k in REFERENCES:
+        if k in missing:
+            continue            # already reported as a missing file
+        if k not in models:
+            out.append(f"{k}: absent from baseline; relock to cover it")
     if not quick:
         names = [n for n, _ in SOUNDNESS]
         out += [f"soundness/{n}: in the baseline but no longer checked"
@@ -176,7 +208,7 @@ def relock_changes(current, sound_now, old):
             if n not in sound_now]
     for key, m in current.items():
         was = old.get("models", {}).get(key)
-        if was:
+        if was is not None:
             out += drift_failures(key, m, was)
             out += lock_failures(key, m, was)
     for name, a in sound_now.items():
@@ -201,8 +233,10 @@ def report_text(rows, started, finished, digest, renderer):
         "",
         "Written by `analysis/regress.py --update-baseline` when it locked `analysis/baseline.json`, in a run "
         f"from {started} to {finished} UTC. The gate writes this file only when every check listed in "
-        "`docs/verification-method.md` passes: every reference below meets every limit, every render is a sound "
-        "mesh, and no render prints anything beyond OpenSCAD's normal statistics and the expected notes.",
+        "`docs/verification-method.md` passes: every reference below meets every limit; every render of a "
+        "reference, and of a configuration without one, is a sound mesh and prints nothing beyond OpenSCAD's normal "
+        "statistics and the expected notes; and every size the sliders cannot produce stops with its error and "
+        "writes no file.",
         "",
         f"File verified: `{compare.SCAD.name}`, SHA-256 {digest}, computed with Unix (LF) line endings, as git "
         f"stores the file (`git show <commit>:\"shells/multibin-shell/{compare.SCAD.name}\" | sha256sum`). A plain "
@@ -245,7 +279,12 @@ class Steps:
     their place, and tests these real ones separately on small inputs."""
 
     def unit_tests(self):
-        r = subprocess.run([sys.executable, str(UNIT_TESTS)], capture_output=True, text=True, cwd=HERE)
+        """Whether gate_test.py passes. A run started from inside the unit tests
+        counts as failing, so the tests can never start themselves again."""
+        if os.environ.get(NESTED):
+            return False
+        r = subprocess.run([sys.executable, str(UNIT_TESTS)], capture_output=True, text=True, cwd=HERE,
+                           env=dict(os.environ, **{NESTED: "1"}))
         return r.returncode == 0
 
     def now(self):
@@ -333,11 +372,13 @@ def run(steps, scad, update=False, accept=False, quick=False, alternate=False, l
         rows.append(dict(row, key=key, seconds=r["seconds"]))
         current[key] = dict(m, render_s=round(r["seconds"], 1), **{k: a[k] for k in AUDIT_KEPT})
         failures += hard_failures(key, m) + sample_failures(key, row) + soundness_failures(key, a)
+        # a key the baseline lacks is reported by coverage_failures; an entry
+        # that is there but empty or incomplete fails here
         was = base.get("models", {}).get(key)
-        if was:
+        if was is not None:
             failures += drift_failures(key, m, was)
             failures += lock_failures(key, a, was)
-            log(f"{key:6} " + "  ".join(f"{f}={m[f]:.4f}({m[f] - was[f]:+.4f})" for f in DRIFT))
+            log(f"{key:6} " + "  ".join(f"{f}={m[f]:.4f}({m[f] - was.get(f, float('nan')):+.4f})" for f in DRIFT))
 
     if not quick:
         log("=" * 78)
@@ -371,10 +412,9 @@ def run(steps, scad, update=False, accept=False, quick=False, alternate=False, l
                 log(f"  {name:24} 3MF     coincident vertex groups: {groups}; edges broken by a merge: {merged}")
         for name, params, error in REJECTED:
             r = steps.render(scad, f"soundness/{name}.stl", params, (error,))
-            rejected = r["path"] is None and error in r["seen"]
-            if not rejected:
-                failures.append(f"rejected/{name}: expected the render to stop with: {error}")
-            log(f"  {name:24} {'rejected' if rejected else 'NOT REJECTED'}")
+            found = rejection_failures(name, r["path"], error in r["seen"], error)
+            failures += found
+            log(f"  {name:24} {'NOT REJECTED' if found else 'rejected'}")
 
     # every render reads the file afresh, so an edit during the run would mix two versions
     if steps.digest(scad) != digest:

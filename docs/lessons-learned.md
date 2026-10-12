@@ -26,6 +26,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 - [A mutation test needs passing tests to start from](#a-mutation-test-needs-passing-tests-to-start-from)
 - [Give a review a severity scale and a closed scope](#give-a-review-a-severity-scale-and-a-closed-scope)
 - [Test a refusal with every override switched on](#test-a-refusal-with-every-override-switched-on)
+- [Judge each condition of a decision in its own statement](#judge-each-condition-of-a-decision-in-its-own-statement)
 
 ## Random sampling hides edge-shaped deviations
 
@@ -246,3 +247,13 @@ Mistakes and near misses from building the generators, each with its cause, the 
 **Rule:** test each rule that says "never" with every flag that relaxes the other rules switched on, so that only the rule under test can cause the refusal.
 
 **Check:** the test "a relock never skips a missing reference file, even with --accept-drift" in the shell's `gate_test.py`, and the mutation "a relock skips a missing reference file" in `mutation_test.py`.
+
+## Judge each condition of a decision in its own statement
+
+**What happened:** two of the shell gate's decisions each joined two conditions in one expression: a rejected size had to write no file and print its error, and a shape counted as changed if its vertices or its volume differed. The tests ran each condition alone. A reviewer replaced the joining operator so that only the case with both faults at once passed, and every test still passed. For the rejected sizes that case is the real one: a generator that builds the size writes a file and prints no error.
+
+**Cause:** two conditions give four cases, and the tests covered three. The one left out was the fault most likely to happen.
+
+**Rule:** when a decision rests on more than one condition, write each as its own statement with its own failure line, and test every combination, starting with the one a real fault would produce.
+
+**Check:** `rejection_failures` and `lock_failures` in the shell's `regress.py`; the tests "a run fails on a size the generator builds instead of refusing, on both counts" and "a change of vertices and volume together fails and is named" in `gate_test.py`; the mutations "a size that writes a file and prints no error counts as rejected" and "a shape whose vertices and volume both changed passes" in `mutation_test.py`.

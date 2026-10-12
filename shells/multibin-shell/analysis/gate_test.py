@@ -217,6 +217,7 @@ def test_policy():
 
 def test_decisions():
     lim, drift, nan = policy.LIMITS, policy.DRIFT, float("nan")
+    zero_drift = dict.fromkeys(drift, 0.0)
     for field, limit in lim.items():
         check(f"HARD {field} at the limit passes", not regress.hard_failures("K", dict(lim)))
         check(f"HARD {field} just over the limit fails", regress.hard_failures("K", dict(lim, **{field: limit + 1e-9})))
@@ -227,8 +228,12 @@ def test_decisions():
     check("summary carries a value that is not a number into the maximum",
           np.isnan(compare.summary(row(vmax=(0.0, nan)))["mx"]) and np.isnan(compare.summary(row(p99=(nan, 0.0)))["p99"]))
     check("the required number of samples passes", not regress.sample_failures("K", row()))
-    check("any other number of samples fails", regress.sample_failures("K", row(samples=policy.N_SAMPLES - 1)))
-    zero = dict.fromkeys(drift, 0.0)
+    check("one sample fewer fails", regress.sample_failures("K", row(samples=policy.N_SAMPLES - 1)))
+    check("one sample more fails", regress.sample_failures("K", row(samples=policy.N_SAMPLES + 1)))
+    check("a locked metric missing from the baseline fails",
+          len(regress.drift_failures("K", zero_drift, {k: v for k, v in zero_drift.items() if k != "p99"})) == 1
+          and len(regress.drift_failures("K", zero_drift, {})) == len(zero_drift))
+    zero = zero_drift
     for field, tol in drift.items():
         check(f"DRIFT {field} at the tolerance passes", not regress.drift_failures("K", dict(zero, **{field: tol}), zero))
         check(f"DRIFT {field} just over fails", regress.drift_failures("K", dict(zero, **{field: tol + 1e-9}), zero))
@@ -243,7 +248,34 @@ def test_decisions():
           regress.lock_failures("n", a, dict(a, volume=a["volume"] + policy.SOUND_VOL + 1e-6)))
     check("a volume change of exactly the tolerance passes",
           not regress.lock_failures("n", dict(a, volume=policy.SOUND_VOL), dict(a, volume=0.0)))
+    far = a["volume"] + 1.0
+    for label, was, named in (("vertices alone", dict(a, digest="0"), "(vertices;"),
+                              ("volume alone", dict(a, volume=far), "(volume;"),
+                              ("vertices and volume together", dict(a, digest="0", volume=far), "(vertices and volume;")):
+        found = regress.lock_failures("n", a, was)
+        check(f"a change of {label} fails and is named", len(found) == 1 and named in found[0])
     check("a render absent from the baseline fails", regress.lock_failures("n", a, "absent"))
+    check("an empty baseline entry fails", regress.lock_failures("n", a, {}))
+    # coverage: a reference is reported once, as a missing file or as absent from the baseline
+    held = {k: {} for k in REFERENCES}
+    lacking = {k: {} for k in REFERENCES[1:]}
+    for label, missing, models, want in (
+            ("its file missing and the baseline holding it", [REF], held, [f"{REF}: reference file missing"]),
+            ("its file missing and the baseline lacking it", [REF], lacking, [f"{REF}: reference file missing"]),
+            ("its file present and the baseline lacking it", [], lacking, [f"{REF}: absent from baseline"]),
+            ("its file present and the baseline holding it", [], held, [])):
+        found = regress.coverage_failures(missing, dict(models=models, soundness={}), False, True)
+        check(f"a reference with {label} gives exactly the line for that case",
+              len(found) == len(want) and all(w in f for w, f in zip(want, found)))
+    # a size the sliders cannot produce: the file and the error, each alone and together
+    for path, stopped, lines in ((None, True, 0), ("f.stl", True, 1), (None, False, 1), ("f.stl", False, 2)):
+        found = regress.rejection_failures("w", path, stopped, "E")
+        check(f"a rejected size with {'a' if path else 'no'} file and {'its' if stopped else 'no'} error gives "
+              f"{lines} failure(s)", len(found) == lines)
+    check("a rejected size's two failures say which",
+          regress.rejection_failures("w", "f.stl", False, "E")
+          == ["rejected/w: expected the render to stop, and it wrote a file",
+              "rejected/w: expected the render to stop with: E"])
     check("a baseline entry with no shape locked fails", regress.lock_failures("n", a, dict(volume=a["volume"])))
     check("relocking ignores the baseline", not regress.lock_failures("n", a, None))
     check("a crossing at the limit is sound", compare.clean(dict(a, crossing_depth=policy.CROSSING_LIMIT)))
@@ -286,6 +318,11 @@ def test_messages():
     for line in ('ECHO: "NOTE: a and more"', 'ECHO: "NOTE: a", "more"', 'WARNING: NOTE: a', "NOTE: a"):
         check(f"an expected text inside a longer line is a message ({line})",
               compare.render_problems(line, ["NOTE: a"]) == [line])
+    for texts in policy.EXPECTED_MESSAGES.values():
+        for text in texts:
+            line = f'ECHO: "{text}"'
+            check(f"a note the policy expects elsewhere is a message in a render that expects none ({text[:24]})",
+                  compare.render_problems(line, ()) == [line])
     check("an unexpected message fails", regress.message_failures("K", ["WARNING: x"], [], []))
     check("a missing expected message fails", regress.message_failures("K", [], ["NOTE: a"], []))
     check("an expected message seen passes", not regress.message_failures("K", [], ["NOTE: a"], ["NOTE: a"]))
@@ -323,6 +360,17 @@ def test_audit():
         check(f"clean rejects {field} = {bad}", not compare.clean(dict(a, **{field: bad})))
         check(f"the failure names {field} = {bad}", len(compare.unsound_reasons(dict(a, **{field: bad}))) == 1)
     check("a sound mesh has no failure reasons", compare.unsound_reasons(a) == [])
+    pierce_v = np.array([[0, 0, 0], [10, 0, 0], [0, 10, 0], [2, 2, -1], [2, 2, 1], [3, 3, 1]], dtype=float)
+    for label, faces in (("first", [[0, 1, 2], [3, 4, 5]]), ("second", [[3, 4, 5], [0, 1, 2]])):
+        count, deep = export_check.crossings(pierce_v, np.array(faces))
+        check(f"a triangle pierced by another's edge is a crossing when it comes {label}", count == 1 and deep > 0.5)
+    for label, two in (("watertight and winding", dict(watertight=False, winding=False)),
+                       ("bad_edges and dup_faces", dict(bad_edges=1, dup_faces=1)),
+                       ("bodies and volume", dict(bodies=2, volume=-1.0)),
+                       ("everything", dict(watertight=False, winding=False, bad_edges=1, dup_faces=1, bodies=2,
+                                           volume=-1.0, crossing_depth=1.0))):
+        check(f"a mesh failing on {label} together is not sound, with each fault named",
+              not compare.clean(dict(a, **two)) and len(compare.unsound_reasons(dict(a, **two))) == len(two))
     check("a crossing is named with its depth",
           compare.unsound_reasons(dict(a, crossing_depth=0.0058)) == ["triangles crossing 0.0058 mm deep"])
     flipped = cube()
@@ -528,18 +576,39 @@ def test_real_steps():
     text = ('/* [Size] */\n// Width = how wide\nwidth_lu = 2; // [1:0.5:12]\nfront_wall = "topped"; // [topped, topless, simple]\n'
             'plain = 3;\n  indented = 1; // [0:1:2]\nsplit =\n  4; // [3:1:5]\n$fn = 32; // [8:1:64]\n'
             '// a brace { in a comment, and one in a string below\nlabel = "{"; // [a, b]\n'
+            '/* and a brace { in a block comment */\nafterblock = 1; // [0:1:2]\n'
+            'twosemi = 2;; // [1:1:3]\ncalled = round(2); // [1:1:3]\nwords = 1; // [0:1:2] and words\n'
+            'nosemi = 1 // [0:1:2]\nnoted = 1; // LU ; // [0:1:2]\nneg = -1.5; // [-2:0.5:2]\n'
             '/* [Hidden] */\nhidden = 1; // [0:1:5]\n/* [Later] */\nlater = 2; // [0:1:9]\n'
-            '/* [ Hidden ] */\nspaced = 1;\n/* [Hidden] */\nagain = 1;\n/* a note */\nnoted = 1;\n'
+            '/* [ Hidden ] */\nspaced = 1;\n/* [Hidden] */\nagain = 1;\n/* a note */\nplainc = 1;\n'
+            '/* [Hidden] [B] */\ntwonames = 1;\n/* [Hidden] */\nagain2 = 1;\n/* [A] [Hidden] */\nsecond = 1;\n'
+            '/* [Hidden] */\nagain3 = 1;\n/* [Hidden] and words */\nworded = 1;\n'
             'module m() { inside = 1; // [0:1:2]\n}\n/* [After] */\nafter = 1; // [0:1:2]\n')
+    cut = compare.before_first_block
+    for label, source, kept in (
+            ("in code", 'a = 1;\nmodule m() { b }', 'a = 1;\nmodule m() '),
+            ("after a brace in a line comment", '// {\na { b', '// {\na '),
+            ("after a brace in a block comment", '/* { */ a { b', '/* { */ a '),
+            ("after a brace in a string that also holds an escaped quote", 'a = "\\"{"; b { c', 'a = "\\"{"; b '),
+            ("after a brace in the middle of a string", 'a = "xy{z"; b { c', 'a = "xy{z"; b '),
+            ("nowhere, when the text has none", 'a = 1;\nb = 2;', 'a = 1;\nb = 2;'),
+            ("nowhere, when the only brace is in a line comment that ends the text", 'a = 1; // {', 'a = 1; // {'),
+            ("nowhere, when the only brace is in a block comment that never closes", 'a /* {', 'a /* {'),
+            ("nowhere, when the only brace is in a string that never closes", 'a = "{', 'a = "{'),
+            ("nowhere, when a string ends the text", 'a = "b"', 'a = "b"')):
+        check(f"the scan for the first block stops at a brace {label}", cut(source) == kept)
     scad = TMP / "customizer.scad"
     scad.write_text(text, encoding="utf-8")
     want = dict(width_lu=(1.0, 0.5, 12.0), front_wall=("topped", "topless", "simple"), plain=(), indented=(0.0, 1.0, 2.0),
-                split=(), label=("a", "b"), later=(0.0, 1.0, 9.0), spaced=(), noted=())
+                split=(), label=("a", "b"), later=(0.0, 1.0, 9.0), spaced=(), noted=(), plainc=(),
+                afterblock=(0.0, 1.0, 2.0), twosemi=(), called=(), words=(), nosemi=(), neg=(-2.0, 0.5, 2.0),
+                twonames=(), second=(), worded=())
     want["$fn"] = (8.0, 1.0, 64.0)
     check("the real Customizer step reads every parameter before the first block that no Hidden marker hides: with a "
           "note or none, indented, named with $, after a brace in a comment or a string, in a section opened after the "
-          "Hidden one, and after any one-line block comment whose first bracketed name is not Hidden; a note on a later line of a "
-          "split assignment does not count", steps.customizer(scad) == want)
+          "Hidden one, and after any one-line block comment that is not the Hidden marker alone; a parameter gets its "
+          "slider or dropdown only when written as a number or quoted string, one semicolon and the note, and nothing "
+          "more", steps.customizer(scad) == want)
     # the real file steps, pointed at scratch files
     saved = regress.BASELINE, regress.REPORT, regress.UNIT_TESTS
     regress.BASELINE, regress.REPORT = TMP / "baseline.json", TMP / "REPORT.md"
@@ -553,10 +622,25 @@ def test_real_steps():
                                                "2026-01-01 00:00", "2026-01-01 00:30", "A" * 64, "OpenSCAD test"))
         report = regress.REPORT.read_text(encoding="utf-8")
         check("the real report steps read back the digest the report names", steps.report_digest() == "A" * 64)
-        for code, passes in ((0, True), (1, False)):
-            regress.UNIT_TESTS = TMP / f"unit_tests_{code}.py"
-            regress.UNIT_TESTS.write_text(f"import sys\nsys.exit({code})\n", encoding="utf-8")
-            check(f"the real unit test step reports exit status {code}", steps.unit_tests() is passes)
+        # the gate marks the environment of the unit tests it runs; this file may be one of them
+        marked = os.environ.pop(regress.NESTED, None)
+        try:
+            for code, passes in ((0, True), (1, False)):
+                regress.UNIT_TESTS = TMP / f"unit_tests_{code}.py"
+                regress.UNIT_TESTS.write_text(f"import sys\nsys.exit({code})\n", encoding="utf-8")
+                check(f"the real unit test step reports exit status {code}", steps.unit_tests() is passes)
+            regress.UNIT_TESTS = TMP / "unit_tests_marked.py"
+            regress.UNIT_TESTS.write_text(f"import os, sys\nsys.exit(0 if os.environ.get({regress.NESTED!r}) else 1)\n",
+                                          encoding="utf-8")
+            check("the real unit test step marks the environment of the tests it runs", steps.unit_tests() is True)
+            os.environ[regress.NESTED] = "1"
+            regress.UNIT_TESTS = TMP / "unit_tests_0.py"
+            check("the real unit test step refuses to run from inside the unit tests, so they cannot start themselves",
+                  steps.unit_tests() is False)
+        finally:
+            os.environ.pop(regress.NESTED, None)
+            if marked is not None:
+                os.environ[regress.NESTED] = marked
     finally:
         regress.BASELINE, regress.REPORT, regress.UNIT_TESTS = saved
     check("the report has a row for every reference", all(f"| {k} |" in report for k in REFERENCES))
@@ -742,10 +826,20 @@ def test_checks():
     for tol, text in ((1e-5, "3MF merged within 1e-05 mm leaves 2 edge(s)"),
                       (1e-4, "3MF merged within 0.0001 mm leaves 2 edge(s)")):
         fails("3MF merges", f"a 3MF that a merge within {tol:g} mm folds", text, merged={tol: 2})
-    fails("rejected sizes", "a size that is not rejected", "rejected/height_below: expected the render to stop",
+    fails("rejected sizes", "a size that stops without its error", "rejected/height_below: expected the render to stop with",
           rejects=False)
-    fails("rejected sizes", "a rejected size that still writes a file", "rejected/depth_above: expected the render to stop",
-          reject_writes=True)
+    fails("rejected sizes", "a rejected size that still writes a file",
+          "rejected/depth_above: expected the render to stop, and it wrote a file", reject_writes=True)
+    code, failures, _ = gate_run(locked, rejects=False, reject_writes=True)
+    check("[rejected sizes] a run fails on a size the generator builds instead of refusing, on both counts",
+          code == 1 and has(failures, "rejected/width_between_steps: expected the render to stop, and it wrote a file")
+          and has(failures, "rejected/width_between_steps: expected the render to stop with"))
+    for label, path in (("configuration", CONF_STL), ("reference", REF_STL)):
+        code, failures, _ = gate_run(locked, audit={path: dict(digest="x", volume=3.0)})
+        check(f"[shape lock] a run fails on a {label} whose vertices and volume both changed",
+              code == 1 and has(failures, "geometry changed vs baseline (vertices and volume;"))
+    fails("shape lock", "a reference whose baseline entry is empty", f"{REF}: absent from baseline",
+          baseline=dict(locked, models=dict(locked["models"], **{REF: {}})))
 
     # a clean run renders, measures and examines exactly what the policy lists
     def renders(names_params_expected):

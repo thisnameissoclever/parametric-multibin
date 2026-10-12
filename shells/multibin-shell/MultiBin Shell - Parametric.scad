@@ -8,25 +8,25 @@
 // Print orientation: the base is on the build plate and the opening is on top.
 // X = width, Y = front to back on the plate, Z = up. The left and front outer
 // faces are at x = -25 and y = -25, so a whole first cell is centred on the
-// origin. A drawer made with the same three numbers fits inside: the drawer's
-// height runs along Y and its depth along Z.
+// origin. A drawer made with the same three numbers fits inside with its bottom
+// against the front wall: the drawer's height runs along Y and its depth along Z.
 
-/* [Size (LU, the same numbers as the drawer that goes inside)] */
-// Width in LU (X). A half LU adds a 25 mm cell with no central base pocket
+/* [Size in LU (1 LU is 50 mm; the same numbers as the drawer that goes inside)] */
+// Width in LU (X). A half LU adds a 25 mm cell at the right end, with no central base pocket
 width_lu = 2; // [1:0.5:12]
-// Drawer height in LU: the shell's front-to-back size on the build plate (Y). A half LU adds a 25 mm cell with no central base pocket
+// Drawer height in LU: the shell's front-to-back size on the build plate (Y). A half LU adds a 25 mm cell at the back, with no central base pocket
 height_lu = 1; // [0.5:0.5:12]
 // Drawer depth in LU, along the shell's height as printed (Z). The shell is 50 mm per LU plus 5 mm tall
 depth_lu = 2; // [1:0.5:12]
 
 /* [Walls (front faces the front of the build plate)] */
-// Front wall. Rail channels sit only on whole 50 mm cells, so a side shorter than 1 LU, and the half-LU end of a side, have none
+// Front wall, which the drawer's bottom goes against. Rail channels sit only on whole 50 mm cells, so a side shorter than 1 LU, and the half-LU end of a side, have none
 front_wall = "topped"; // [topped, topless, simple]
 // Back wall
 back_wall = "topped"; // [topped, topless, simple]
-// Left wall
+// Left wall (every choice builds the same wall on a shell 0.5 LU front to back)
 left_wall = "topped"; // [topped, topless, simple]
-// Right wall
+// Right wall (every choice builds the same wall on a shell 0.5 LU front to back)
 right_wall = "topped"; // [topped, topless, simple]
 
 /* [Hidden] */
@@ -67,7 +67,7 @@ X0 = -U/2;  X1 = U*NX - U/2;     // outer faces
 Y0 = -U/2;  Y1 = U*NY - U/2;
 ZT = U*NZ + 5;                   // rim height
 
-wall    = 3.0;                   // outer face to inner face at the pillars
+wall    = 3.0;                   // outer face to inner face, where no channel or recess is cut
 c_out   = 8.737;                 // outer vertical corner chamfer leg
 c_in    = 5.565;                 // inner vertical corner chamfer leg
 floor_z = 6.0;                   // top of the floor
@@ -107,8 +107,8 @@ rec_h    = 2.2;
 rec_lo   = 0.8;                  // height of the 1:2 lower slope
 catch_t0 = 10.435;               // catch slots span this .. catch_t1 from the LU centre
 catch_t1 = 16.435;
-catch_z0 = 13.3;                 // lower catch slots (first band only)
-catch_up = 9.2;                  // upper catch slots: this far below each 50 mm band top
+catch_z0 = 13.3;                 // lower catch slots: one row, in the first 50 mm band of height
+catch_up = 9.2;                  // upper catch slots: this far below the top of each 50 mm band of height
 groove_up = 4.2;                 // rim groove: this far below the rim
 seam_g   = 0.5;                  // seam groove half width at its floor
 seam_flare = 0.002;              // seam slots' inner flare starts this far past the

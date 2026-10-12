@@ -29,8 +29,10 @@ CORNER_TOL = 1e-7
 # how far outside a triangle, as a fraction of its size, an edge may pass and
 # still count as crossing it; this only absorbs rounding
 BARY_TOL = 1e-10
-# vertex merge distances for the 3MF check, in mm: 10 and 100 times the
-# 0.000001 mm step of the coordinates OpenSCAD writes into a 3MF file
+# vertex merge distances for the 3MF check, in mm. A 3MF file stores 32-bit
+# coordinates, whose step is about 0.000001 mm at 10 mm from the origin and
+# 0.00006 mm at 550 mm: the smaller distance is 10 times the step near the
+# origin, and far from the origin only the larger one can join two positions
 MERGE_TOLS = (1e-5, 1e-4)
 # STL renders are binary, which keeps 32-bit coordinates. OpenSCAD's default
 # ASCII STL keeps six significant digits, 0.001 mm beyond 100 mm from the origin

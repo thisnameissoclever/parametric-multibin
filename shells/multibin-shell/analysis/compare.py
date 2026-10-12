@@ -68,7 +68,8 @@ def render_problems(console, expected=()):
     text. A line that holds an expected text and anything more is a message."""
     echoed = {f'ECHO: "{e}"' for e in expected}
     lines = [ln.strip() for ln in console.splitlines() if ln.strip()]
-    return [ln for ln in lines if not NORMAL_RENDER_LINE.match(ln) and ln not in echoed]
+    lines = [ln for ln in lines if not NORMAL_RENDER_LINE.match(ln)]
+    return [ln for ln in lines if ln not in echoed]
 
 
 def render(command, scad, params, out, expected=()):
@@ -104,25 +105,24 @@ def customizer(scad=None):
     lines; this is not OpenSCAD's own parser. The scan stops at the first "{"
     outside comments and strings (the generator's parameters all come before
     its first module). Each line that starts with a name and "=" counts as a
-    parameter, unless the nearest one-line block comment above it has [Hidden]
-    as its first bracketed name. Each maps to its slider as (minimum, step,
-    maximum) or to its dropdown's values, read from a // [...] note that ends
-    that line, or to () when the line has no such note, which the Customizer
-    shows as a plain input box. An assignment that follows a statement on its
-    line, or whose "=" is on a later line than its name, is not read, and
-    comments and strings are not skipped when looking for assignments and
-    block comments."""
+    parameter, unless the nearest one-line block comment above it is
+    /* [Hidden] */ with nothing else in it. A parameter maps to its slider as
+    (minimum, step, maximum) or to its dropdown's values only when the rest of
+    its line is a number or a quoted string, one semicolon and a // [...] note
+    and nothing more; written any other way it maps to (), which matches no
+    slider or dropdown. An assignment that follows a statement on its line, or
+    whose "=" is on a later line than its name, is not read, and comments and
+    strings are not skipped when looking for assignments and block comments."""
     text = before_first_block(Path(scad or SCAD).read_text(encoding="utf-8"))
     found, hidden = {}, False
     for part in re.split(r"(/\*[^\n]*?\*/)", text):
         if re.fullmatch(r"/\*[^\n]*?\*/", part):
-            section = re.search(r"\[([^\]]*)\]", part)
-            hidden = bool(section) and section.group(1) == "Hidden"
+            hidden = re.fullmatch(r"/\*[ \t]*\[Hidden\][ \t]*\*/", part) is not None
             continue
         if hidden:
             continue
         for name, rest in re.findall(r"^[ \t]*(\$?\w+)[ \t]*=(?!=)([^\n]*)", part, flags=re.M):
-            note = re.search(r";[ \t]*//[ \t]*\[([^\]]*)\][ \t]*$", rest)
+            note = PARAMETER_LINE.fullmatch(rest)
             if not note:
                 found[name] = ()
             elif ":" in note.group(1):
@@ -130,6 +130,11 @@ def customizer(scad=None):
             else:
                 found[name] = tuple(x.strip() for x in note.group(1).split(","))
     return found
+
+
+# what follows the "=" of a Customizer parameter: a number or a quoted string,
+# one semicolon, and a slider or dropdown note in square brackets
+PARAMETER_LINE = re.compile(r'[ \t]*(?:-?\d+(?:\.\d+)?|"[^"\n]*");[ \t]*//[ \t]*\[([^\]\n]*)\][ \t]*')
 
 
 def before_first_block(text):
@@ -195,14 +200,14 @@ def audit(stl):
 
 def clean(a):
     """Watertight, consistently wound with positive volume, one body, every edge
-    shared by exactly two faces, no duplicated facets, no deep crossings."""
-    return (a["watertight"] and a["winding"] and a["volume"] > 0 and a["bodies"] == 1
-            and a["bad_edges"] == 0 and a["dup_faces"] == 0
-            and a["crossing_depth"] <= policy.CROSSING_LIMIT)
+    shared by exactly two faces, no duplicated facets, no deep crossings: the
+    audit a gives unsound_reasons nothing to report."""
+    return not unsound_reasons(a)
 
 
 def unsound_reasons(a):
-    """Each property clean() requires that the audit a fails, in words."""
+    """Each property a sound mesh needs that the audit a lacks, in words. Each
+    is judged on its own; clean() is true when there is none."""
     out = []
     if not a["watertight"]:
         out.append("not watertight")
