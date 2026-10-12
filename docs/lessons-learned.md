@@ -31,6 +31,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 - [A new check or coverage claim is a decision](#a-new-check-or-coverage-claim-is-a-decision)
 - [Measure a stated size on the part](#measure-a-stated-size-on-the-part)
 - [Name the code's list in a row, do not summarise it](#name-the-codes-list-in-a-row-do-not-summarise-it)
+- [Say only what was measured about a whole set](#say-only-what-was-measured-about-a-whole-set)
 
 ## Random sampling hides edge-shaped deviations
 
@@ -301,3 +302,13 @@ Mistakes and near misses from building the generators, each with its cause, the 
 **Rule:** where a row can name the code's own list, it names the list and says nothing about what the list holds. Where a row describes a procedure, it gives every step that changes the result.
 
 **Check:** the "Console output" and "3MF merges" rows of "What the shell's gate checks" in `docs/verification-method.md`.
+
+## Say only what was measured about a whole set
+
+**What happened:** to keep "every known difference" true, the introduction of the shell's `DEVIATIONS.md` gained a sentence about differences under 0.001 mm. Its first form called one of them the largest known, and a reviewer measured three larger. Its second form said the known ones come from three rounded constants; two reviewers confirmed the three and measured more. Each form had been checked against the generator's source before its commit, and each cost a review cycle.
+
+**Cause:** "largest" and "three" are statements about every member of a set, and only some members had been measured. A reviewer who measures one more member falsifies the sentence.
+
+**Rule:** a sentence ranks, counts or bounds a set only when the whole set has been measured and the sentence can name that measurement. Otherwise it gives measured examples and says that they are examples.
+
+**Check:** the introduction of `shells/multibin-shell/DEVIATIONS.md` gives one example of a difference under 0.001 mm, with no count and no ranking.
