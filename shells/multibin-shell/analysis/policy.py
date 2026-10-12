@@ -3,8 +3,10 @@ gate, in one place.
 
 RULES would suit any part; SHELL is this part's own coverage. gate_test.py
 compares both with a literal copy, so no value changes without a test changing.
-docs/verification-method.md states the limits; the comments below give the
-reasons for the volume, crossing, corner and merge tolerances.
+docs/verification-method.md states the limits a render is held to. The sampling
+seed, the two tolerances inside the crossing test and the export format are
+stated only here; the comments below give the reasons for the volume, crossing,
+corner and merge tolerances.
 """
 
 # ------------------------------------------------------------------ rules
@@ -37,19 +39,31 @@ MERGE_TOLS = (1e-5, 1e-4)
 # STL renders are binary, which keeps 32-bit coordinates. OpenSCAD's default
 # ASCII STL keeps six significant digits, 0.001 mm beyond 100 mm from the origin
 EXPORT_FORMAT = ("--export-format", "binstl")
-# The console lines OpenSCAD 2021.01 prints for every clean render: cache and
-# timing statistics and the summary of the result, which for one solid says it
-# is simple and has two volumes (outside and inside). Any other line, such as a
-# WARNING, an ERROR, a DEPRECATED notice, an ECHO or the nonplanar-face notice
-# (which has no WARNING prefix), is a render message.
-NORMAL_RENDER_LINE = (
-    r"^(Geometries in cache|Geometry cache size in bytes|CGAL Polyhedrons in cache|CGAL cache size in bytes"
-    r"|Total rendering time|Top level object is a 3D object|Vertices|Halfedges|Edges|Halffacets|Facets):"
-    r"|^Simple:\s+yes$|^Volumes:\s+2$")
+# What OpenSCAD 2021.01 prints on standard error for a clean render of one
+# solid, line by line and in this order, each as a pattern the whole line must
+# match: cache and timing statistics, then the summary, which says the result
+# is simple and has two volumes (outside and inside). The gate requires a
+# render's console output to be exactly these lines, after the notes its
+# configuration is expected to echo.
+CONSOLE_STATISTICS = (
+    r"Geometries in cache: [0-9]+",
+    r"Geometry cache size in bytes: [0-9]+",
+    r"CGAL Polyhedrons in cache: [0-9]+",
+    r"CGAL cache size in bytes: [0-9]+",
+    r"Total rendering time: [0-9]+:[0-9][0-9]:[0-9][0-9]\.[0-9][0-9][0-9]",
+    r"   Top level object is a 3D object:",
+    r"   Simple:        yes",
+    r"   Vertices: +[0-9]+",
+    r"   Halfedges: +[0-9]+",
+    r"   Edges: +[0-9]+",
+    r"   Halffacets: +[0-9]+",
+    r"   Facets: +[0-9]+",
+    r"   Volumes:         2",
+)
 
 RULES = dict(LIMITS=LIMITS, DRIFT=DRIFT, N_SAMPLES=N_SAMPLES, SAMPLE_SEED=SAMPLE_SEED, P99=P99,
              SOUND_VOL=SOUND_VOL, CROSSING_LIMIT=CROSSING_LIMIT, CORNER_TOL=CORNER_TOL, BARY_TOL=BARY_TOL,
-             MERGE_TOLS=MERGE_TOLS, EXPORT_FORMAT=EXPORT_FORMAT, NORMAL_RENDER_LINE=NORMAL_RENDER_LINE)
+             MERGE_TOLS=MERGE_TOLS, EXPORT_FORMAT=EXPORT_FORMAT, CONSOLE_STATISTICS=CONSOLE_STATISTICS)
 
 # ------------------------------------------------------------------ shell coverage
 
@@ -63,8 +77,10 @@ REFERENCES = ("T111", "T212", "T313", "T3135", "T323", "T1215",
               "O111", "O212", "O323", "O1215",
               "S111", "S212", "S323", "S1215")
 
-# the generator's Customizer: each slider as (minimum, step, maximum) and each
-# dropdown's values, as the annotations in the generator's text must give them
+# the ranges and choices the generator is meant to accept: each size as
+# (minimum, step, maximum) and each wall's kinds. The gate does not read the
+# generator's Customizer notes; the rejected sizes below and the configurations
+# at both ends of each range are what tests these
 CUSTOMIZER = dict(
     width_lu=(1.0, 0.5, 12.0), height_lu=(0.5, 0.5, 12.0), depth_lu=(1.0, 0.5, 12.0),
     front_wall=("topped", "topless", "simple"), back_wall=("topped", "topless", "simple"),
@@ -128,7 +144,7 @@ REJECTED = (
     ("width_not_a_number", dict(width_lu='"a"'), _error("width_lu", 1, "a")),
 )
 
-# console texts a configuration must print, and may print without failing
+# the notes a configuration's renders must echo, in this order, before the statistics
 EXPECTED_MESSAGES = {
     "thin_1.5x0.5x1": (
         "NOTE: left_wall = topped has no effect: the side is shorter than 1 LU, so it has no rail channel.",

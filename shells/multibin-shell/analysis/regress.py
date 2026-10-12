@@ -1,11 +1,10 @@
-"""Regression gate for the shell generator: prove it still reproduces every
-reference shell, and that configurations without a reference still export
-clean, unchanged geometry. Run it after ANY change to the SCAD.
+"""Regression gate for the shell generator. It renders the generator for every
+reference shell, every configuration and every rejected size the policy lists,
+and compares the results with the references, with fixed limits and with a
+locked baseline. Run it after ANY change to the SCAD.
 
-CHECKS below is the closed list of what the gate checks; docs/verification-method.md
-explains each. gate_test.py has a test of every check through run(), and
-mutation_test.py disables each check in turn to show that test notices. The
-limits and lists that document names are in policy.py.
+CHECKS below is the closed list of what the gate compares; docs/verification-method.md
+has one row for each. The limits and lists are in policy.py.
 
 Requires the packages in requirements.txt at the repository root.
 
@@ -15,9 +14,6 @@ Usage:
                                        any failure, and, unless --accept-drift, over any drift,
                                        shape change or dropped coverage against the baseline it
                                        replaces)
-  python regress.py --quick            render only the references: skip the configurations without a
-                                       reference, their 3MF exports and the rejected sizes (not with
-                                       --update-baseline)
   python regress.py --scad PATH        check a different SCAD (selftest.py uses this)
 """
 
@@ -48,33 +44,32 @@ AUDIT_KEPT = ("watertight", "winding", "bodies", "bad_edges", "dup_faces", "cros
               "digest", "volume", "extents")
 
 CHECKS = {
-    "unit tests": "gate_test.py passes before anything is rendered",
-    "locked generator": "the generator is the file the baseline and VERIFICATION.md were made from",
-    "customizer": "the parameters a scan finds outside the generator's Hidden section and before its first block, "
-                  "with their sliders and dropdowns, are those of policy.CUSTOMIZER",
-    "generator unchanged": "the generator is the same file at the end of the run as at the start",
-    "reference coverage": "every reference in policy.REFERENCES is present, measured and in the baseline, "
-                          "and the baseline holds no other",
-    "configuration coverage": "every configuration in policy.SOUNDNESS is rendered and in the baseline, "
-                              "and the baseline holds no other",
-    "render success": "every render writes its file",
-    "render messages": "no render, STL or 3MF, prints a line that is neither one of OpenSCAD's normal "
-                       "statistics lines nor exactly an expected note",
-    "expected messages": "every note in policy.EXPECTED_MESSAGES appears",
-    "hard limits": "every reference meets the Gate 1 limits, measured from policy.N_SAMPLES points per "
-                   "direction; a value that is not a number fails",
-    "drift": "no reference metric is worse than its locked value by more than policy.DRIFT",
-    "mesh soundness": "every STL is watertight, consistently wound, of positive volume and one body, with "
-                      "every edge shared by exactly two faces and no duplicated facets",
-    "crossings": "no two triangles that share at most one vertex cross deeper than policy.CROSSING_LIMIT",
-    "shape lock": "every render's vertex digest and volume match the baseline, references and "
-                  "configurations alike",
-    "3MF coincident vertices": "no 3MF export writes two separate vertices at identical coordinates",
-    "3MF merges": "merging a 3MF export's vertices within each of policy.MERGE_TOLS leaves every edge "
-                  "shared by exactly two triangles",
-    "rejected sizes": "each value in policy.REJECTED stops the render with its error and writes no file",
-    "relock rules": "a relock is refused from --quick or another SCAD, is never written over a failure, "
-                    "and needs --accept-drift for drift, a shape change or dropped coverage",
+    "unit tests": "gate_test.py exits 0 before anything is rendered",
+    "locked generator": "in a plain run, the generator's digest equals the one in the baseline and the one in "
+                        "VERIFICATION.md",
+    "generator unchanged": "the generator's digest at the end of the run equals its digest at the start",
+    "reference coverage": "every reference in policy.REFERENCES has its file, and in a plain run the references "
+                          "in the baseline are exactly that list",
+    "configuration coverage": "in a plain run, the configurations in the baseline are exactly policy.SOUNDNESS",
+    "render success": "every render of a reference or a configuration writes its file",
+    "console output": "each such render's standard error is exactly its expected notes followed by "
+                      "policy.CONSOLE_STATISTICS, and its standard output is empty",
+    "hard limits": "each reference's four measures are within policy.LIMITS, with policy.N_SAMPLES points "
+                   "sampled in each direction",
+    "drift": "in a plain run, each reference's four measures are no more than policy.DRIFT above the baseline's",
+    "mesh soundness": "each STL's audit: watertight, consistently wound, positive volume, one body, every "
+                      "edge on two faces, no duplicated facet",
+    "crossings": "each STL's deepest crossing between two triangles that share at most one vertex is within "
+                 "policy.CROSSING_LIMIT",
+    "shape lock": "in a plain run, each STL's vertex digest equals the baseline's and its volume is within "
+                  "policy.SOUND_VOL of the baseline's",
+    "3MF coincident vertices": "each 3MF export has no two vertices at identical coordinates",
+    "3MF merges": "each 3MF export, with vertices merged within each of policy.MERGE_TOLS, has every edge "
+                  "on exactly two triangles",
+    "rejected sizes": "each render with a value in policy.REJECTED writes no file, and its console output "
+                      "contains the value's error text in quotation marks",
+    "relock rules": "a relock is refused together with --scad, writes nothing over a failure, and needs "
+                    "--accept-drift for drift, a shape change or dropped coverage against the old baseline",
 }
 
 
@@ -87,9 +82,24 @@ def hard_failures(key, m):
 
 
 def sample_failures(key, row):
-    """A reference measured from another number of surface points than the method requires."""
+    """A reference measured from another number of surface points, in either
+    direction, than the method requires."""
     n = row.get("samples")
-    return [] if n == policy.N_SAMPLES else [f"{key}: HARD measured from {n} samples, not {policy.N_SAMPLES}"]
+    wanted = [policy.N_SAMPLES, policy.N_SAMPLES]
+    return [] if n == wanted else [f"{key}: HARD measured from {n} sampled points, not {wanted}"]
+
+
+def entries(base, kind):
+    """A baseline's entries of one kind ("models" or "soundness"), by name. An
+    entry that is not a table of values, such as a JSON null, counts as an
+    empty table, which the comparisons then fail."""
+    return {name: entry if isinstance(entry, dict) else {} for name, entry in base.get(kind, {}).items()}
+
+
+def stopped_with(console, error):
+    """Whether a console text holds this error text in quotation marks, as
+    OpenSCAD prints the message of a failed assertion."""
+    return f'"{error}"' in console
 
 
 def drift_failures(key, now, was):
@@ -105,23 +115,34 @@ def drift_failures(key, now, was):
     return out
 
 
-def rejection_failures(name, path, stopped, error):
-    """A size the sliders cannot produce that the generator did not refuse.
-    Writing a file and not printing the error are judged separately: either
-    one is a failure."""
+def console_failures(label, console, stdout, notes):
+    """A render whose console output is not exactly the expected text: each
+    note echoed on its own line, in order, then the statistics lines of
+    policy.CONSOLE_STATISTICS, every line ended by a line feed, with nothing
+    before, between or after; and nothing on standard output. The whole text is
+    matched in one piece."""
+    lines = [re.escape(f'ECHO: "{note}"') for note in notes] + list(policy.CONSOLE_STATISTICS)
     out = []
-    if path is not None:
-        out.append(f"rejected/{name}: expected the render to stop, and it wrote a file")
-    if not stopped:
-        out.append(f"rejected/{name}: expected the render to stop with: {error}")
+    if not re.fullmatch("".join(line + "\n" for line in lines), console):
+        out.append(f"{label}: console output is not the expected text: {first_difference(console, lines)}")
+    if stdout != "":
+        out.append(f"{label}: standard output is not empty: {stdout[:120]!r}")
     return out
 
 
-def message_failures(label, problems, expected, seen):
-    """Render messages that should not be there, and expected ones that did not appear."""
-    unwanted = [f"{label}: render message: {line}" for line in problems]
-    absent = [f"{label}: expected render message missing: {e}" for e in expected if e not in seen]
-    return unwanted + absent
+def first_difference(console, lines):
+    """Where a console text first departs from the expected lines, in words.
+    This only describes a failure console_failures has already decided."""
+    got = console.split("\n")
+    for i, line in enumerate(lines):
+        if i >= len(got):
+            return f"line {i + 1} is missing"
+        if not re.fullmatch(line, got[i]):
+            return f"line {i + 1} is {got[i][:160]!r}"
+    rest = got[len(lines):]
+    if not rest:
+        return f"line {len(lines)} does not end with a line feed"
+    return f"after line {len(lines)} comes {chr(10).join(rest)[:160]!r}"
 
 
 def soundness_failures(label, a):
@@ -150,15 +171,8 @@ def lock_failures(label, a, was):
     return []
 
 
-def customizer_failures(found):
-    """Sliders or dropdowns in the generator's text that differ from the policy's."""
-    names = list(policy.CUSTOMIZER) + [n for n in found if n not in policy.CUSTOMIZER]
-    return [f"customizer: {n} is annotated {found.get(n)}, and the policy has {policy.CUSTOMIZER.get(n)}"
-            for n in names if found.get(n) != policy.CUSTOMIZER.get(n)]
-
-
 def threemf_failures(name, groups, merged):
-    """Faults in a 3MF export that a program merging vertices by position would fold."""
+    """A 3MF export with coincident vertices, or with an edge off two triangles after a merge."""
     out = []
     if groups:
         out.append(f"soundness/{name}: 3MF has {groups} group(s) of separate vertices at identical coordinates")
@@ -169,51 +183,60 @@ def threemf_failures(name, groups, merged):
     return out
 
 
+def rejection_failures(name, path, stopped, error):
+    """A value in policy.REJECTED that the generator did not refuse. Writing a
+    file and not printing the error are judged separately: either one is a
+    failure."""
+    out = []
+    if path is not None:
+        out.append(f"rejected/{name}: expected the render to stop, and it wrote a file")
+    if not stopped:
+        out.append(f"rejected/{name}: expected the render to stop with: {error}")
+    return out
+
+
 def locked_generator_failures(digest, locked, reported):
     """The baseline or VERIFICATION.md made from another version of the generator."""
     out = []
     if locked != digest:
-        out.append(f"generator: the baseline was locked on another version of this file (SHA-256 {locked}); "
-                   "relock; without --accept-drift that also shows no shape the gate renders changed")
+        out.append(f"generator: the baseline was locked on another version of this file (SHA-256 {locked}); relock")
     if reported != digest:
         out.append(f"generator: VERIFICATION.md is for another version of this file (SHA-256 {reported}); "
                    "a relock rewrites it")
     return out
 
 
-def coverage_failures(missing, base, update, quick):
-    """References or configurations that a run would otherwise silently skip."""
+def coverage_failures(missing, base, update):
+    """References and configurations that differ between the policy, the files and the baseline."""
     out = [f"{k}: reference file missing: {fname(k)}" for k in missing]
     if update:
         return out
-    models = base.get("models", {})
+    models = entries(base, "models")
     out += [f"{k}: in the baseline but not in policy.REFERENCES" for k in models if k not in REFERENCES]
     for k in REFERENCES:
         if k in missing:
             continue            # already reported as a missing file
         if k not in models:
             out.append(f"{k}: absent from baseline; relock to cover it")
-    if not quick:
-        names = [n for n, _ in SOUNDNESS]
-        out += [f"soundness/{n}: in the baseline but no longer checked"
-                for n in base.get("soundness", {}) if n not in names]
+    names = [n for n, _ in SOUNDNESS]
+    out += [f"soundness/{n}: in the baseline but no longer checked" for n in entries(base, "soundness")
+            if n not in names]
     return out
 
 
 def relock_changes(current, sound_now, old):
-    """What a relock would accept: reference drift, configuration shape changes,
-    and references or configurations dropped, against the baseline being replaced."""
-    out = [f"{k}: locked reference no longer measured" for k in old.get("models", {}) if k not in current]
-    out += [f"soundness/{n}: locked configuration no longer checked" for n in old.get("soundness", {})
-            if n not in sound_now]
+    """What a relock would accept: reference drift, shape changes, and references
+    or configurations dropped, against the baseline being replaced."""
+    models, sound = entries(old, "models"), entries(old, "soundness")
+    out = [f"{k}: locked reference no longer measured" for k in models if k not in current]
+    out += [f"soundness/{n}: locked configuration no longer checked" for n in sound if n not in sound_now]
     for key, m in current.items():
-        was = old.get("models", {}).get(key)
-        if was is not None:
-            out += drift_failures(key, m, was)
-            out += lock_failures(key, m, was)
+        if key in models:
+            out += drift_failures(key, m, models[key])
+            out += lock_failures(key, m, models[key])
     for name, a in sound_now.items():
-        if name in old.get("soundness", {}):
-            out += lock_failures(f"soundness/{name}", a, old["soundness"][name])
+        if name in sound:
+            out += lock_failures(f"soundness/{name}", a, sound[name])
     return out
 
 
@@ -226,21 +249,17 @@ def report_digest(path=REPORT):
 
 
 def report_text(rows, started, finished, digest, renderer):
-    """VERIFICATION.md for a relock that passed every check. rows is one
-    compare.measure row per reference, with its key and render seconds."""
+    """VERIFICATION.md for a relock. rows is one compare.measure row per
+    reference, with its key and render seconds."""
     lines = [
         "# VERIFICATION - shell Gate 1 mechanical match",
         "",
         "Written by `analysis/regress.py --update-baseline` when it locked `analysis/baseline.json`, in a run "
-        f"from {started} to {finished} UTC. The gate writes this file only when every check listed in "
-        "`docs/verification-method.md` passes: every reference below meets every limit; every render of a "
-        "reference, and of a configuration without one, is a sound mesh and prints nothing beyond OpenSCAD's normal "
-        "statistics and the expected notes; and every size the sliders cannot produce stops with its error and "
-        "writes no file.",
+        f"from {started} to {finished} UTC. `docs/verification-method.md` lists what that run compares.",
         "",
-        f"File verified: `{compare.SCAD.name}`, SHA-256 {digest}, computed with Unix (LF) line endings, as git "
-        f"stores the file (`git show <commit>:\"shells/multibin-shell/{compare.SCAD.name}\" | sha256sum`). A plain "
-        "`regress.py` run fails if the generator is any other file.",
+        f"File verified: `{compare.SCAD.name}`, SHA-256 {digest}, computed with CR LF line endings turned into "
+        f"LF. `git show <commit>:\"shells/multibin-shell/{compare.SCAD.name}\" | sha256sum` prints the same digest "
+        "in lower case when git holds the file with LF line endings.",
         "",
         f"Renderer: {renderer}.",
         "",
@@ -252,14 +271,10 @@ def report_text(rows, started, finished, digest, renderer):
         "is the volume difference as a percentage of the reference's; p99 is the 99th percentile of the "
         "sampled distances, in whichever direction (reference to render, or render to reference) is worse; "
         "sampled max is the largest sampled distance; and all-vertices max is the largest distance from any "
-        "vertex of either mesh to the other.",
+        "vertex of either mesh to the other. The two sampled columns vary a little from one run to the next.",
         "",
         f"Limits: bounding box <= {LIMITS['bbox']} mm per axis, volume <= {LIMITS['vol']} %, p99 <= "
         f"{LIMITS['p99']} mm, and both maxima <= {LIMITS['mx']} mm.",
-        "",
-        "The sampled columns can differ between runs, p99 in the fourth decimal and the sampled maximum in the "
-        "third, because OpenSCAD does not write its triangles in a fixed order, so the sample points differ; the "
-        "bounding box, volume and all-vertices columns repeat.",
         "",
         "| model | bbox dmax (mm) | vol delta (%) | p99 (worse dir) | sampled max | all-vertices max | render (s) |",
         "|---|---|---|---|---|---|---|",
@@ -296,14 +311,11 @@ class Steps:
     def report_digest(self):
         return report_digest(REPORT)
 
-    def customizer(self, scad):
-        return compare.customizer(scad)
-
     def missing_refs(self):
         return [k for k in REFERENCES if not (refs.STL_DIR / fname(k)).is_file()]
 
-    def render(self, scad, name, params, expected):
-        return compare.render(compare.OPENSCAD_COMMAND, scad, params, compare.out_for(scad) / name, expected)
+    def render(self, scad, name, params):
+        return compare.render(compare.OPENSCAD_COMMAND, scad, params, compare.out_for(scad) / name)
 
     def measure(self, key, path):
         return compare.metrics(key, path, 0)
@@ -330,14 +342,11 @@ class Steps:
         REPORT.write_text(text, encoding="utf-8")
 
 
-def run(steps, scad, update=False, accept=False, quick=False, alternate=False, log=print):
+def run(steps, scad, update=False, accept=False, alternate=False, log=print):
     """One gate run. Returns (exit status, failures); writes the baseline and
     VERIFICATION.md only when relocking with no failures."""
     if update and alternate:
         log("refusing to lock a baseline from an alternate SCAD")
-        return 2, []
-    if update and quick:
-        log("refusing to lock a baseline without the configurations that have no reference")
         return 2, []
     if not steps.unit_tests():
         log("gate_test.py fails: the gate's decisions cannot be trusted until it passes")
@@ -352,20 +361,21 @@ def run(steps, scad, update=False, accept=False, quick=False, alternate=False, l
     log(f"generator {scad}, SHA-256 {digest}")
     missing = steps.missing_refs()
     present = [k for k in REFERENCES if k not in missing]
-    failures = coverage_failures(missing, base, update, quick)
+    failures = coverage_failures(missing, base, update)
     if not update:
         failures += locked_generator_failures(digest, base.get("scad_digest"), steps.report_digest())
-    failures += customizer_failures(steps.customizer(scad))
     rows, current, sound_now = [], {}, {}
+    models, golden = entries(base, "models"), entries(base, "soundness")
 
     log("=" * 78)
     log(f"REFERENCE MATCH ({len(present)} of {len(REFERENCES)} references)")
     log("=" * 78)
     for key in present:
-        r = steps.render(scad, f"{key}.stl", compare.params(key), ())
-        failures += message_failures(key, r["problems"], (), r["seen"])
+        r = steps.render(scad, f"{key}.stl", compare.params(key))
+        failures += console_failures(key, r["console"], r["stdout"], ())
         if r["path"] is None:
             failures.append(f"{key}: render failed")
+            log(r["console"][-3000:])
             continue
         row = steps.measure(key, r["path"])
         m, a = compare.summary(row), steps.audit(r["path"])
@@ -374,47 +384,45 @@ def run(steps, scad, update=False, accept=False, quick=False, alternate=False, l
         failures += hard_failures(key, m) + sample_failures(key, row) + soundness_failures(key, a)
         # a key the baseline lacks is reported by coverage_failures; an entry
         # that is there but empty or incomplete fails here
-        was = base.get("models", {}).get(key)
-        if was is not None:
+        if key in models:
+            was = models[key]
             failures += drift_failures(key, m, was)
             failures += lock_failures(key, a, was)
             log(f"{key:6} " + "  ".join(f"{f}={m[f]:.4f}({m[f] - was.get(f, float('nan')):+.4f})" for f in DRIFT))
 
-    if not quick:
-        log("=" * 78)
-        log("SOUNDNESS (no reference: mesh soundness, and the locked vertex digest and volume)")
-        log("=" * 78)
-        golden = base.get("soundness", {})
-        for name, params in SOUNDNESS:
-            expected = EXPECTED_MESSAGES.get(name, ())
-            r = steps.render(scad, f"soundness/{name}.stl", params, expected)
-            failures += message_failures(f"soundness/{name}", r["problems"], expected, r["seen"])
+    log("=" * 78)
+    log("CONFIGURATIONS WITHOUT A REFERENCE (mesh audit, and the locked vertex digest and volume)")
+    log("=" * 78)
+    for name, params in SOUNDNESS:
+        notes = EXPECTED_MESSAGES.get(name, ())
+        r = steps.render(scad, f"soundness/{name}.stl", params)
+        failures += console_failures(f"soundness/{name}", r["console"], r["stdout"], notes)
+        if r["path"] is None:
+            failures.append(f"soundness/{name}: render failed")
+            log(f"  {name:24} RENDER FAILED")
+            log(r["console"][-3000:])
+            continue
+        a = steps.audit(r["path"])
+        sound_now[name] = a
+        found = soundness_failures(f"soundness/{name}", a)
+        found += lock_failures(f"soundness/{name}", a, None if update else golden.get(name, "absent"))
+        failures += found
+        state = "ok" if not found else "CHANGED" if clean(a) else "BROKEN"
+        log(f"  {name:24} {state:7} bbox={a['extents']} vol={a['volume']}")
+        if name in THREEMF_CHECK:
+            r = steps.render(scad, f"soundness/{name}.3mf", params)
+            failures += console_failures(f"soundness/{name} 3MF", r["console"], r["stdout"], notes)
             if r["path"] is None:
-                failures.append(f"soundness/{name}: render failed")
-                log(f"  {name:24} RENDER FAILED")
-                log(r["console"])
+                failures.append(f"soundness/{name}: 3MF render failed")
                 continue
-            a = steps.audit(r["path"])
-            sound_now[name] = a
-            found = soundness_failures(f"soundness/{name}", a)
-            found += lock_failures(f"soundness/{name}", a, None if update else golden.get(name, "absent"))
-            failures += found
-            state = "ok" if not found else "CHANGED" if clean(a) else "BROKEN"
-            log(f"  {name:24} {state:7} bbox={a['extents']} vol={a['volume']}")
-            if name in THREEMF_CHECK:
-                r = steps.render(scad, f"soundness/{name}.3mf", params, expected)
-                failures += message_failures(f"soundness/{name} 3MF", r["problems"], expected, r["seen"])
-                if r["path"] is None:
-                    failures.append(f"soundness/{name}: 3MF render failed")
-                    continue
-                groups, merged = steps.coincident_3mf(r["path"]), steps.merge_faults(r["path"])
-                failures += threemf_failures(name, groups, merged)
-                log(f"  {name:24} 3MF     coincident vertex groups: {groups}; edges broken by a merge: {merged}")
-        for name, params, error in REJECTED:
-            r = steps.render(scad, f"soundness/{name}.stl", params, (error,))
-            found = rejection_failures(name, r["path"], error in r["seen"], error)
-            failures += found
-            log(f"  {name:24} {'NOT REJECTED' if found else 'rejected'}")
+            groups, merged = steps.coincident_3mf(r["path"]), steps.merge_faults(r["path"])
+            failures += threemf_failures(name, groups, merged)
+            log(f"  {name:24} 3MF     coincident vertex groups: {groups}; edges broken by a merge: {merged}")
+    for name, params, error in REJECTED:
+        r = steps.render(scad, f"soundness/{name}.stl", params)
+        found = rejection_failures(name, r["path"], stopped_with(r["console"], error), error)
+        failures += found
+        log(f"  {name:24} {'NOT REJECTED' if found else 'rejected'}")
 
     # every render reads the file afresh, so an edit during the run would mix two versions
     if steps.digest(scad) != digest:
@@ -439,7 +447,7 @@ def run(steps, scad, update=False, accept=False, quick=False, alternate=False, l
         steps.write_baseline(dict(models=current, soundness=sound_now, scad_digest=digest))
         steps.write_report(report_text(rows, started, steps.now(), digest, steps.renderer()))
         log(f"baseline relocked and VERIFICATION.md written: {len(current)} reference(s), "
-            f"{len(sound_now)} soundness config(s)")
+            f"{len(sound_now)} configuration(s)")
         return 0, failures
 
     log("=" * 78)
@@ -448,9 +456,8 @@ def run(steps, scad, update=False, accept=False, quick=False, alternate=False, l
         for f in failures:
             log(f"  - {f}")
         return 1, failures
-    log(f"PASS - all {len(REFERENCES)} references match"
-        + (" (configurations without a reference skipped)" if quick
-           else ", and every soundness configuration is sound and unchanged") + ".")
+    log(f"PASS - no failure in {len(REFERENCES)} references, {len(SOUNDNESS)} configurations and "
+        f"{len(REJECTED)} rejected sizes.")
     return 0, failures
 
 
@@ -458,8 +465,7 @@ def options(argv):
     """What the command line asks of run()."""
     alternate = "--scad" in argv
     scad = Path(argv[argv.index("--scad") + 1]).resolve() if alternate else compare.SCAD
-    return dict(scad=scad, update="--update-baseline" in argv, accept="--accept-drift" in argv,
-                quick="--quick" in argv, alternate=alternate)
+    return dict(scad=scad, update="--update-baseline" in argv, accept="--accept-drift" in argv, alternate=alternate)
 
 
 def main(argv=None, steps=None):

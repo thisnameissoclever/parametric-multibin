@@ -33,7 +33,7 @@ Entries starting with M are measured surface differences, Q entries are quirks o
 **Difference.** The generator's exports contain small artifacts that the references do not. None changes the shape by more than 0.001 mm, and every edge stays shared by exactly two triangles.
 
 - Zero-area triangles, whose three corners lie on one line, where a face's edge meets a vertex of a neighbouring face.
-- Slivers and pairs of separate vertices less than 0.0001 mm apart, where the edges of two cuts meet at almost the same point. Some slivers fold back against a neighbouring triangle. A 3MF export (3D Manufacturing Format, a zipped mesh format that slicers read) stores coordinates in 32-bit precision, and far from the origin that rounding can turn a zero-area triangle into such a fold, about 0.0001 mm2 in area: the 12 x 1 x 1 shell has two, at z 3.2 in the pad centred at x 550.
+- Slivers and pairs of separate vertices less than 0.0001 mm apart, where the edges of two cuts meet at almost the same point. Some slivers fold back against a neighbouring triangle. A 3MF export (3D Manufacturing Format, a zipped mesh format that slicers read) stores coordinates in 32-bit precision, and far from the origin that rounding can turn a zero-area triangle into such a fold, about 0.0001 mm2 in area: a shell 12 LU wide has two in each pad of its last column, at z 3.2 around x 550.
 - A step 0.001 mm tall where a loft (a solid that blends one cross-section into another, such as a chamfer) meets the solid that continues it.
 - Pairs of triangles that touch, or cross each other by less than 0.0001 mm.
 

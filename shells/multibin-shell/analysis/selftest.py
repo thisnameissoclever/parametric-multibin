@@ -1,20 +1,19 @@
-"""Prove the regression gate works, in three steps:
+"""Run the gate's own tests, in three steps:
 
-1. gate_test.py tests the gate's limits and drives every check in
-   regress.CHECKS through the gate's run with stand-in renders, in a few
-   seconds.
-2. mutation_test.py breaks the gate one way at a time and checks that
-   gate_test.py notices each break, in a few minutes.
-3. A full run of regress.py against the known-bad fixture must fail, and must
-   report each failure listed below that the fixture is known to cause.
+1. gate_test.py, a few seconds.
+2. mutation_test.py, a few minutes: each break in its list must make
+   gate_test.py fail.
+3. A run of regress.py against the known-bad fixture, which must fail and must
+   report each failure listed below.
 
 The fixture, fixtures/frozen_a6ff94e.scad, is the generator as of commit
 a6ff94e. Against the current baseline it has, among other faults:
 
   locked generator   it is not the file the baseline was made from, nor the
                      file VERIFICATION.md is for
-  render messages    every render prints a nonplanar-face notice (its thread),
-                     references and soundness configurations alike
+  console output     every render prints a nonplanar-face notice (its thread),
+                     references, configurations and 3MF exports alike, and
+                     the 0.5 LU shell prints no note for its wall choices
   HARD               Topless rim grooves stop at the seams: 0.4 mm on O212;
                      Simple walls lack the full rim groove: p99 0.14 mm on S111
   DRIFT              its slot mouth chamfer puts T111's worst point at 0.046 mm,
@@ -28,23 +27,17 @@ a6ff94e. Against the current baseline it has, among other faults:
   reference mesh     triangles crossing 0.006 mm deep on the 3 LU wide
                      references, among them T313
   3MF export         its threaded holes' entry cones cross the thread at shared
-                     angles, leaving separate vertices at identical coordinates;
-                     its 3MF exports print the nonplanar-face notice too
+                     angles, leaving separate vertices at identical coordinates
   3MF merge          its seam slots' inner chamfers start in the inner grooves'
                      floor plane, so merging the 4 x 1 x 1 export's vertices
                      within 0.00001 mm leaves edges with four triangles
-  expected notes     it prints no note for wall choices on a 0.5 LU side
   rejected sizes     it builds sizes the sliders cannot produce instead of
                      stopping with an error
 
-A check that stopped working would drop its line from the output, so the
-self-test looks for each line, not only the exit status. The fixture cannot
-show every check: its Customizer parameters are the policy's, and the unit
-tests, generator unchanged, reference coverage, configuration coverage, render
-success and relock rules checks need a failing test, an edit during the run, a
-missing file, a baseline that lists something else, a failed render or a
-relock. Nor can it show a fault that only the 0.0001 mm 3MF merge finds.
-gate_test.py covers those.
+The self-test looks for each line, not only the exit status. The fixture does
+not fail the unit tests, generator unchanged, reference coverage, configuration
+coverage, render success or relock rules checks, so this step shows nothing
+about those; gate_test.py drives them with stand-in steps.
 
 Usage: python selftest.py     (about an hour, almost all of it step 3)
 Exits 0 when all three steps pass, 1 otherwise.
@@ -61,8 +54,10 @@ FIXTURE = HERE / "fixtures" / "frozen_a6ff94e.scad"
 EXPECTED_FAILURES = [
     ("locked generator", "generator: the baseline was locked on another version"),
     ("locked generator, report", "generator: VERIFICATION.md is for another version"),
-    ("reference render messages", "T111: render message: PolySet has nonplanar faces"),
-    ("soundness render messages", "soundness/half_w_1.5x1x1: render message: PolySet has nonplanar faces"),
+    ("reference console output", "T111: console output is not the expected text"),
+    ("configuration console output", "soundness/half_w_1.5x1x1: console output is not the expected text"),
+    ("expected notes", "soundness/thin_1.5x0.5x1: console output is not the expected text"),
+    ("3MF console output", "soundness/half_both_2.5x1.5x1.5 3MF: console output is not the expected text"),
     ("HARD maximum", "O212: HARD mx="),
     ("HARD p99", "S111: HARD p99="),
     ("DRIFT", "T111: DRIFT mx"),
@@ -72,9 +67,7 @@ EXPECTED_FAILURES = [
     ("soundness mesh", "soundness/long_1x7x1: mesh not a clean single shell"),
     ("reference mesh", "T313: mesh not a clean single shell: triangles crossing"),
     ("3MF export", "soundness/half_both_2.5x1.5x1.5: 3MF has"),
-    ("3MF render messages", "soundness/half_both_2.5x1.5x1.5 3MF: render message"),
     ("3MF merge", "soundness/wide_4x1x1: 3MF merged within 1e-05 mm"),
-    ("expected notes", "soundness/thin_1.5x0.5x1: expected render message missing"),
     ("rejected sizes", "rejected/width_between_steps: expected the render to stop"),
 ]
 
@@ -100,8 +93,8 @@ def main():
         print(f"  {'caught ' if found else 'MISSED '} {section:26} {text}")
         ok &= found
     print(f"full gate output: {log}")
-    print("SELF-TEST PASS: gate_test.py passes, it catches every mutation, "
-          "and the gate reported every expected failure of the fixture"
+    print("SELF-TEST PASS: gate_test.py passed, mutation_test.py found no survivor, "
+          "and the gate reported every listed failure of the fixture"
           if ok else "SELF-TEST FAIL")
     return 0 if ok else 1
 

@@ -7,12 +7,12 @@ each render is from its reference and the mesh audit. Where points are more
 than 0.05 mm off it also lists, per direction and for each of three height
 bands, up to N of the worst spots (default 10).
 
-This command is a diagnostic: it decides nothing and always exits 0. The gate
+This command is a diagnostic: it decides nothing, and exits 0 whatever it
+measures. The gate
 is regress.py, which uses the functions below and writes VERIFICATION.md.
 """
 
 import hashlib
-import re
 import subprocess
 import sys
 import time
@@ -59,29 +59,17 @@ def out_for(scad=None):
 
 # ------------------------------------------------------------------ rendering
 
-NORMAL_RENDER_LINE = re.compile(policy.NORMAL_RENDER_LINE)
-
-
-def render_problems(console, expected=()):
-    """Render messages in OpenSCAD's console output: every line that is neither
-    one of its normal statistics lines nor exactly the echo of an expected
-    text. A line that holds an expected text and anything more is a message."""
-    echoed = {f'ECHO: "{e}"' for e in expected}
-    lines = [ln.strip() for ln in console.splitlines() if ln.strip()]
-    lines = [ln for ln in lines if not NORMAL_RENDER_LINE.match(ln)]
-    return [ln for ln in lines if ln not in echoed]
-
-
-def render(command, scad, params, out, expected=()):
+def render(command, scad, params, out):
     """Run OpenSCAD once and report what it did. Every render of the gate and
     of this command goes through here.
 
     command is the OpenSCAD command as a list of arguments. Any earlier file at
     out is deleted first, so a render that writes nothing can never be read
     from an older file. An STL is written in binary (policy.EXPORT_FORMAT).
-    Returns a dict: path (None when no file was written), seconds, console
-    (the end of the console output), problems (render messages other than the
-    expected texts) and seen (the expected texts that appeared)."""
+    Returns a dict: path (None when no file was written), seconds, and console
+    and stdout, which are everything OpenSCAD wrote to standard error and to
+    standard output, with each CR LF pair turned into LF and nothing else
+    changed."""
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():
@@ -90,72 +78,19 @@ def render(command, scad, params, out, expected=()):
     for k, v in params.items():
         args += ["-D", f"{k}={v}"]
     t0 = time.time()
-    r = subprocess.run(args, capture_output=True, text=True, timeout=3600)
-    return dict(path=out if out.exists() else None, seconds=time.time() - t0, console=r.stderr[-3000:],
-                problems=render_problems(r.stderr, expected), seen=[e for e in expected if e in r.stderr])
+    r = subprocess.run(args, capture_output=True, timeout=3600)
+    return dict(path=out if out.exists() else None, seconds=time.time() - t0,
+                console=as_written(r.stderr), stdout=as_written(r.stdout))
+
+
+def as_written(raw):
+    """Console bytes as text, with each CR LF pair turned into LF and nothing else changed."""
+    return raw.decode("utf-8", errors="replace").replace("\r\n", "\n")
 
 
 def openscad_version():
     r = subprocess.run([*OPENSCAD_COMMAND, "--version"], capture_output=True, text=True)
     return (r.stdout + r.stderr).strip()
-
-
-def customizer(scad=None):
-    """The Customizer parameters in a generator's text, found by scanning its
-    lines; this is not OpenSCAD's own parser. The scan stops at the first "{"
-    outside comments and strings (the generator's parameters all come before
-    its first module). Each line that starts with a name and "=" counts as a
-    parameter, unless the nearest one-line block comment above it is
-    /* [Hidden] */ with nothing else in it. A parameter maps to its slider as
-    (minimum, step, maximum) or to its dropdown's values only when the rest of
-    its line is a number or a quoted string, one semicolon and a // [...] note
-    and nothing more; written any other way it maps to (), which matches no
-    slider or dropdown. An assignment that follows a statement on its line, or
-    whose "=" is on a later line than its name, is not read, and comments and
-    strings are not skipped when looking for assignments and block comments."""
-    text = before_first_block(Path(scad or SCAD).read_text(encoding="utf-8"))
-    found, hidden = {}, False
-    for part in re.split(r"(/\*[^\n]*?\*/)", text):
-        if re.fullmatch(r"/\*[^\n]*?\*/", part):
-            hidden = re.fullmatch(r"/\*[ \t]*\[Hidden\][ \t]*\*/", part) is not None
-            continue
-        if hidden:
-            continue
-        for name, rest in re.findall(r"^[ \t]*(\$?\w+)[ \t]*=(?!=)([^\n]*)", part, flags=re.M):
-            note = PARAMETER_LINE.fullmatch(rest)
-            if not note:
-                found[name] = ()
-            elif ":" in note.group(1):
-                found[name] = tuple(float(x) for x in note.group(1).split(":"))
-            else:
-                found[name] = tuple(x.strip() for x in note.group(1).split(","))
-    return found
-
-
-# what follows the "=" of a Customizer parameter: a number or a quoted string,
-# one semicolon, and a slider or dropdown note in square brackets
-PARAMETER_LINE = re.compile(r'[ \t]*(?:-?\d+(?:\.\d+)?|"[^"\n]*");[ \t]*//[ \t]*\[([^\]\n]*)\][ \t]*')
-
-
-def before_first_block(text):
-    """The part of a SCAD text before its first "{" that is not inside a
-    comment or a string."""
-    i = 0
-    while i < len(text):
-        if text.startswith("//", i):
-            i = text.find("\n", i) + 1 or len(text)
-        elif text.startswith("/*", i):
-            i = text.find("*/", i + 2) + 2 if "*/" in text[i + 2:] else len(text)
-        elif text[i] == '"':
-            i += 1
-            while i < len(text) and text[i] != '"':
-                i += 2 if text[i] == "\\" else 1
-            i += 1
-        elif text[i] == "{":
-            return text[:i]
-        else:
-            i += 1
-    return text
 
 
 def scad_digest(path=None):
@@ -241,15 +176,16 @@ def clusters(pts, dist, limit, cell=3.0):
 def measure(ref, gen, n_samples=None):
     """Gate 1 measures between two meshes, gen moved so the bounding-box minimum
     corners coincide. Returns (row, spots): row has bbox, vol, samples (the
-    number of surface points sampled per direction, policy.N_SAMPLES unless
-    given) and, per direction, the sampled mean, p95, p99 and max and the
+    two numbers of surface points sampled, on the reference and then on the
+    render, each policy.N_SAMPLES unless given) and, per direction, the sampled
+    mean, p95, p99 and max and the
     all-vertices max (vmax); spots has each direction's points and distances,
     for locating the worst ones."""
     n_samples = policy.N_SAMPLES if n_samples is None else n_samples
     gen = gen.copy()
     gen.apply_translation(ref.bounds[0] - gen.bounds[0])
     row = dict(bbox=float(np.abs(ref.extents - gen.extents).max()),
-               vol=float(abs(gen.volume - ref.volume) / ref.volume * 100))
+               vol=float(abs(gen.volume - ref.volume) / ref.volume * 100), samples=[])
     spots = {}
     for a, b, tag in ((ref, gen, "ref->gen"), (gen, ref, "gen->ref")):
         pts, _ = trimesh.sample.sample_surface(a, n_samples, seed=policy.SAMPLE_SEED)
@@ -258,7 +194,7 @@ def measure(ref, gen, n_samples=None):
         q = np.quantile(dist, [0.95, policy.P99])
         row[tag] = dict(mean=float(dist.mean()), p95=float(q[0]), p99=float(q[1]), mx=float(dist.max()),
                         vmax=float(vdist.max()))
-        row["samples"] = int(len(pts))
+        row["samples"].append(int(len(pts)))
         spots[tag] = (np.vstack([pts, a.vertices]), np.concatenate([dist, vdist]))
     return row, spots
 
@@ -310,8 +246,6 @@ def main():
             continue
         r = render(OPENSCAD_COMMAND, SCAD, params(k), OUT / f"{k}.stl")
         print(f"[{k}] rendered in {r['seconds']:.1f} s")
-        for line in r["problems"]:
-            print(f"[{k}] render message: {line}")
         if r["path"] is None:
             print(f"[{k}] RENDER FAILED\n{r['console']}\n")
             continue

@@ -27,6 +27,8 @@ Mistakes and near misses from building the generators, each with its cause, the 
 - [Give a review a severity scale and a closed scope](#give-a-review-a-severity-scale-and-a-closed-scope)
 - [Test a refusal with every override switched on](#test-a-refusal-with-every-override-switched-on)
 - [Judge each condition of a decision in its own statement](#judge-each-condition-of-a-decision-in-its-own-statement)
+- [Compare text a program controls exactly, or do not check it](#compare-text-a-program-controls-exactly-or-do-not-check-it)
+- [A new check or coverage claim is a decision](#a-new-check-or-coverage-claim-is-a-decision)
 
 ## Random sampling hides edge-shaped deviations
 
@@ -46,7 +48,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** for configurations without a reference, lock their bounding box and volume in the regression baseline, and treat any change as a failure until it is shown to be intended.
 
-**Check:** the soundness section of `regress.py` prints the bounding box and volume for each configuration. The drawer's gate flags a change beyond 0.001 mm on the bounding box or 0.5 mm3 of volume; the shell's flags any change to an exact digest of the triangles, which also catches a feature that moves without changing the volume.
+**Check:** the soundness section of `regress.py` prints the bounding box and volume for each configuration. The drawer's gate flags a change beyond 0.001 mm on the bounding box or 0.5 mm3 of volume; the shell's flags any change to a digest of the vertex coordinates, which also catches a feature that moves without changing the volume.
 
 ## A gate that has never failed is unproven
 
@@ -56,7 +58,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** prove each gate by running it, in full, against a known-bad fixture, and confirm it fails for the expected reasons.
 
-**Check:** `analysis/fixtures/` holds the known-bad version; `regress.py --scad <fixture>` must exit with status 1. For the shell, `selftest.py` also checks that each section of the gate reports the failure the fixture should cause.
+**Check:** `analysis/fixtures/` holds the known-bad version; `regress.py --scad <fixture>` must exit with status 1. For the shell, `selftest.py` also requires each failure line it lists to be in that run's output.
 
 ## Evidence scripts can lie
 
@@ -126,7 +128,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** treat every console line except the renderer's normal statistics as a render message, and fail the regression gate on any message that a configuration does not declare as expected.
 
-**Check:** `render_problems()` in the shell's `analysis/compare.py` allows only OpenSCAD 2021.01's statistics lines, and `gate_test.py` checks that a nonplanar notice, a WARNING, an ECHO and an unknown line all count as messages.
+**Check:** `console_failures` in the shell's `analysis/regress.py` accepts only the exact console text of a clean render after its expected notes, and `test_console` in `gate_test.py` checks that the nonplanar notice, a warning line and a note that is not expected each fail.
 
 ## Apply a cut where its feature is defined
 
@@ -156,7 +158,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** keep each gate decision in a small function and test it at its limit, just under and just over; and for configurations without a reference, lock an exact digest of the geometry rather than a few measures of it.
 
-**Check:** `gate_test.py`, `mutation_test.py` and `selftest.py` in the shell's `analysis` folder; `docs/verification-method.md` says what each proves.
+**Check:** `gate_test.py`, `mutation_test.py` and `selftest.py` in the shell's `analysis` folder; `docs/verification-method.md` says what each does.
 
 ## Measure geometry at full export precision
 
@@ -206,7 +208,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** for every stand-in, also test the real step it replaces on a small input that needs no slow tool, and move the logic out of slow steps into functions that can be tested that way. Make each stand-in record the arguments it is given and check them, or the code that calls it can pass the wrong file or parameters unnoticed.
 
-**Check:** `test_render` and `test_real_steps` in the shell's `gate_test.py`; the mutations in `mutation_test.py` whose descriptions begin "the real"; the test "a clean run renders, digests and reads the Customizer of the SCAD file it was given, and no other".
+**Check:** `test_render` and `test_real_steps` in the shell's `gate_test.py`; the mutations in `mutation_test.py` whose descriptions begin "the real"; the test "a clean run renders and digests the SCAD file it was given, and no other".
 
 ## Look past the largest difference
 
@@ -246,7 +248,7 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** test each rule that says "never" with every flag that relaxes the other rules switched on, so that only the rule under test can cause the refusal.
 
-**Check:** the test "a relock never skips a missing reference file, even with --accept-drift" in the shell's `gate_test.py`, and the mutation "a relock skips a missing reference file" in `mutation_test.py`.
+**Check:** the test "a relock is not written over a missing reference file, even with --accept-drift" in the shell's `gate_test.py`, and the mutation "a relock skips a missing reference file" in `mutation_test.py`.
 
 ## Judge each condition of a decision in its own statement
 
@@ -256,4 +258,24 @@ Mistakes and near misses from building the generators, each with its cause, the 
 
 **Rule:** when a decision rests on more than one condition, write each as its own statement with its own failure line, and test every combination, starting with the one a real fault would produce.
 
-**Check:** `rejection_failures` and `lock_failures` in the shell's `regress.py`; the tests "a run fails on a size the generator builds instead of refusing, on both counts" and "a change of vertices and volume together fails and is named" in `gate_test.py`; the mutations "a size that writes a file and prints no error counts as rejected" and "a shape whose vertices and volume both changed passes" in `mutation_test.py`.
+**Check:** `rejection_failures` and `lock_failures` in the shell's `regress.py`; the tests "a run fails on a size the generator builds instead of refusing" and "a change of vertices and volume together fails and is named" in `gate_test.py`; the mutations "a size that writes a file and prints no error counts as rejected" and "a shape whose vertices and volume both changed passes" in `mutation_test.py`.
+
+## Compare text a program controls exactly, or do not check it
+
+**What happened:** two of the shell gate's checks judged text that the generator controls with patterns. One read the Customizer's slider notes with a scan and converted their numbers; the other sorted each console line by its first words. A reviewer got an edited generator past each: a slider maximum written `1_2`, which Python reads as 12 and OpenSCAD does not, and an extra console line that began with the name of a statistics line. Three rounds of patches each left further cases, such as digits from another script and a form feed after an expected note.
+
+**Cause:** a pattern accepts a family of texts, and the program that really reads the text accepts a different family. Every text in the difference passes the check while meaning something else.
+
+**Rule:** compare such text whole with the exact text expected. Where the expected text cannot be written down, do not make the check, and list the text under what the gate does not see.
+
+**Check:** `console_failures` in the shell's `regress.py` matches a render's whole console text in one piece; "What the gate does not see" in `docs/verification-method.md` lists the Customizer text.
+
+## A new check or coverage claim is a decision
+
+**What happened:** a review asked why the shell gate never read the Customizer text, and the answer was an eighteenth check, added without the owner deciding on it. A later answer added a sentence saying the tests ran every combination of conditions. The check was bypassed in each of the next two rounds, and the sentence was false for two checks it did not name. Both happened after the lesson above on severity had already said to remove a finding's class, or the claim, before adding anything.
+
+**Cause:** adding a check or a sentence looks like the thorough answer to a finding. Each one is also new material for the next review to attack, and a sentence about how completely something is tested is falsified by one missing case.
+
+**Rule:** state what a check compares and with what, never what that achieves. Adding a check, or a statement about what the gate's tests cover, is the owner's decision and is recorded with the pull request's other decisions.
+
+**Check:** the rows of "What the shell's gate checks" in `docs/verification-method.md` each state a comparison; the Decisions list of the shell's pull request.
