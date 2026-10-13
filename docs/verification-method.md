@@ -49,7 +49,7 @@ Every export must be watertight and a single body, with every edge shared by exa
 
 Each part has `analysis/regress.py` and a locked `analysis/baseline.json`. Run the gate after every change to the generator. Relock the baseline only after an intended change, and say so in the commit message.
 
-The shell's gate is the current design, described below. The drawer's gate predates it: it checks the hard limits, the drift, and the bounding box and volume of its configurations without references. Porting the shell's gate to the drawer is on the roadmap.
+The shell's gate is the current design, described below. The drawer's gate predates it. At each reference that is present, it checks the Gate 1 limits and the mesh soundness, and that no Gate 1 measure is worse than in the locked baseline by more than a small tolerance. At each of its configurations without a reference, it checks the mesh soundness, and the bounding box and volume against the locked baseline. It compares no other measure of shape there, so a feature that moves without changing the bounding box or the volume passes. A reference file that is missing is named in a banner and does not fail the run. Porting the shell's gate to the drawer is on the roadmap.
 
 ### What the shell's gate checks
 
