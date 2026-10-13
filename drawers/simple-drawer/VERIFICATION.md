@@ -1,6 +1,6 @@
 # VERIFICATION - Gate 1 mechanical match
 
-Harness: `analysis\compare.py`, run 2026-08-29 07:31 UTC, 50000 surface samples per direction per model, bbox-aligned.
+Harness: `analysis\compare.py`, run 2026-10-13 16:29 UTC, 50000 surface samples per direction per model, bbox-aligned.
 
 Thresholds: bbox delta <= 0.02 mm/axis; volume delta <= 0.5 %; p99 <= 0.05 mm; max <= 0.2 mm (excursions above must be covered in DEVIATIONS.md).
 
@@ -22,51 +22,60 @@ The all-vertices column is a deterministic sweep of every mesh vertex against th
 
 ## Provenance
 
-File verified: `MultiBin Simple Drawer - Parametric.scad`, sha256 85487774FE3198E0EAA4B1342B4FC1D6006A1B7664ECC542CD957FD046D97E03.
-Renderer: OpenSCAD 2021.01. Every render exits 0 with no warning or error; the
-nine reference configurations trigger none of the file's own echo() notices.
+File verified: `MultiBin Simple Drawer - Parametric.scad`, sha256 3C78E0CB8FC3A30ECB3E409F49D2E7BECF5B1CF7E8E047A6D0355F69E359CD72.
 
-Beyond the nine references, `analysis\sweep.py` checks 15 varied configurations
-and `analysis\manifold_grid.py` sweeps 75 depth and height combinations; all
-export a watertight, winding-consistent single shell with the expected outer box
-and a base on z = 0. Independent audits extended this to 428 configurations and
-856 exports in both STL formats with the same result.
+Renderer: OpenSCAD 2021.01. Each of the nine reference renders exits 0 and prints no warning, no error and none of the file's own echo() notices.
 
-Known deviations, each with measured evidence, are listed in DEVIATIONS.md. The
-only one above 0.05 mm is D5, a 0.133 mm fragment the two 3-wide divided
-originals carry and the remake does not.
+Beyond the nine references, three tools were run on this file. `analysis\sweep.py` checks 15 varied configurations: each is a watertight, winding-consistent single body with the expected outer box and its base on z = 0. `analysis\manifold_grid.py` sweeps 75 depth and height combinations of a drawer 1 LU wide: each is watertight and one body, with every edge shared by exactly two faces and no duplicated facet. Both leave `width_ratios`, `depth_ratios`, `divider_thickness` and `divider_scoop` at their defaults. `analysis\regress.py` checks 22 more configurations, 12 of them with a value given for at least one of those four parameters: each passes the same four mesh checks as the grid.
+
+Known deviations, each with measured evidence, are listed in DEVIATIONS.md. The only one above 0.05 mm is D5, a 0.133 mm fragment the two 3-wide divided originals carry and the remake does not.
 
 ## Raw harness output
 
 ```text
 [n111] bbox ref=[43. 57. 43.] gen=[43. 57. 43.] maxdelta=0.0000  vol ref=12603.5 gen=12604.0 (0.004%)
+[n111] ref->gen: mean=0.0001 p95=0.0002 p99=0.0013 max=0.0063
 [n111] ref->gen: all-vertices max=0.0015 at (16.207, -4.057, 1.993)
+[n111] gen->ref: mean=0.0001 p95=0.0002 p99=0.0013 max=0.0072
 [n111] gen->ref: all-vertices max=0.0113 at (-20.116, -46.950, 5.903)
 [s111] bbox ref=[43. 57. 43.] gen=[43. 57. 43.] maxdelta=0.0000  vol ref=12771.4 gen=12771.9 (0.004%)
+[s111] ref->gen: mean=0.0001 p95=0.0002 p99=0.0013 max=0.0056
 [s111] ref->gen: all-vertices max=0.0015 at (16.207, -4.057, 1.993)
+[s111] gen->ref: mean=0.0001 p95=0.0002 p99=0.0013 max=0.0057
 [s111] gen->ref: all-vertices max=0.0113 at (-20.116, -46.950, 5.903)
 [m212] bbox ref=[ 93. 107.  43.] gen=[ 93. 107.  43.] maxdelta=0.0000  vol ref=42189.6 gen=42190.8 (0.003%)
+[m212] ref->gen: mean=0.0000 p95=0.0002 p99=0.0013 max=0.0056
 [m212] ref->gen: all-vertices max=0.0016 at (67.146, -95.398, 2.932)
+[m212] gen->ref: mean=0.0000 p95=0.0002 p99=0.0013 max=0.0056
 [m212] gen->ref: all-vertices max=0.0110 at (70.117, -96.950, 5.903)
 [c212] bbox ref=[ 93. 107.  43.] gen=[ 93. 107.  43.] maxdelta=0.0000  vol ref=39204.9 gen=39206.4 (0.004%)
+[c212] ref->gen: mean=0.0001 p95=0.0003 p99=0.0013 max=0.0056
 [c212] ref->gen: all-vertices max=0.0020 at (26.052, -1.552, 4.317)
+[c212] gen->ref: mean=0.0001 p95=0.0003 p99=0.0013 max=0.0055
 [c212] gen->ref: all-vertices max=0.0113 at (70.117, -96.950, 5.903)
 [g212] bbox ref=[ 93. 107.  43.] gen=[ 93. 107.  43.] maxdelta=0.0000  vol ref=43281.4 gen=43283.4 (0.005%)
+[g212] ref->gen: mean=0.0001 p95=0.0004 p99=0.0013 max=0.0095
 [g212] ref->gen: all-vertices max=0.0022 at (25.502, -48.998, 6.477)
+[g212] gen->ref: mean=0.0001 p95=0.0004 p99=0.0013 max=0.0080
 [g212] gen->ref: all-vertices max=0.0113 at (70.117, -96.950, 5.903)
 [L323] bbox ref=[143. 157.  93.] gen=[143. 157.  93.] maxdelta=0.0000  vol ref=100853.4 gen=100855.2 (0.002%)
+[L323] ref->gen: mean=0.0000 p95=0.0001 p99=0.0008 max=0.0053
 [L323] ref->gen: all-vertices max=0.0018 at (119.023, -146.668, 4.809)
+[L323] gen->ref: mean=0.0000 p95=0.0001 p99=0.0008 max=0.0056
 [L323] gen->ref: all-vertices max=0.0112 at (120.117, -146.950, 5.903)
 [L332] bbox ref=[143. 107. 143.] gen=[143. 107. 143.] maxdelta=0.0000  vol ref=112255.2 gen=112257.2 (0.002%)
+[L332] ref->gen: mean=0.0000 p95=0.0001 p99=0.0006 max=0.0055
 [L332] ref->gen: all-vertices max=0.0015 at (-16.207, -4.057, 1.993)
+[L332] gen->ref: mean=0.0000 p95=0.0001 p99=0.0007 max=0.0055
 [L332] gen->ref: all-vertices max=0.0113 at (120.117, -96.950, 5.903)
 [c313] bbox ref=[143. 157.  43.] gen=[143. 157.  43.] maxdelta=0.0000  vol ref=78173.0 gen=78176.4 (0.004%)
+[c313] ref->gen: mean=0.0001 p95=0.0004 p99=0.0013 max=0.0101
 [c313] ref->gen: all-vertices max=0.1333 at (73.167, -147.000, 1.500)
+[c313] gen->ref: mean=0.0001 p95=0.0004 p99=0.0013 max=0.0106
 [c313] gen->ref: all-vertices max=0.0500 at (73.300, -146.950, 1.650)
 [c3135] bbox ref=[143. 182.  43.] gen=[143. 182.  43.] maxdelta=0.0000  vol ref=87897.0 gen=87900.6 (0.004%)
+[c3135] ref->gen: mean=0.0001 p95=0.0004 p99=0.0013 max=0.0091
 [c3135] ref->gen: all-vertices max=0.1333 at (73.167, -172.000, 1.500)
+[c3135] gen->ref: mean=0.0001 p95=0.0004 p99=0.0013 max=0.0103
 [c3135] gen->ref: all-vertices max=0.0500 at (73.300, -171.950, 1.650)
-
-
-
 ```
