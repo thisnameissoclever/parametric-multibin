@@ -32,13 +32,29 @@ def _local():
     return {}
 
 
+def program_not_wrapper(path):
+    """The OpenSCAD program for a path that may name its Windows console wrapper.
+
+    OpenSCAD for Windows ships openscad.com beside openscad.exe. The .com file
+    is a wrapper that starts the .exe: it writes OpenSCAD's messages to standard
+    output where the program writes them to standard error, and stopping it
+    does not stop the render. A PATH lookup finds the wrapper first. The tools
+    need the program itself, so a path to the wrapper becomes the .exe beside
+    it when that file exists. A name given without its folder is looked up on
+    PATH first, so that a bare openscad.com is recognised too. Anything that
+    is not a wrapper with its program beside it is returned as it was given."""
+    located = shutil.which(str(path)) or str(path)
+    program = Path(located).with_suffix(".exe")
+    return str(program) if Path(located).suffix.lower() == ".com" and program.is_file() else str(path)
+
+
 def _openscad():
     found = os.environ.get("OPENSCAD") or _local().get("openscad")
     if found:
-        return str(found)
+        return program_not_wrapper(found)
     on_path = shutil.which("openscad")
     if on_path:
-        return on_path
+        return program_not_wrapper(on_path)
     if _WINDOWS_OPENSCAD.is_file():
         return str(_WINDOWS_OPENSCAD)
     raise SystemExit(
