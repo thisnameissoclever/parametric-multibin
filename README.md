@@ -19,7 +19,7 @@ Sizes are in LU, MultiBoard's 50 mm layout unit.
 
 | Part | File | Settings |
 |---|---|---|
-| Simple drawer insert | [`drawers/simple-drawer/MultiBin Simple Drawer - Parametric.scad`](drawers/simple-drawer/MultiBin%20Simple%20Drawer%20-%20Parametric.scad) | Width and depth 1 to 12 LU and height 0.5 to 12 LU, all in 0.5 LU steps; 1 to 12 compartments across and front to back; divider height; magnet opening; label holder none, small or large |
+| Simple drawer insert | [`drawers/simple-drawer/MultiBin Simple Drawer - Parametric.scad`](drawers/simple-drawer/MultiBin%20Simple%20Drawer%20-%20Parametric.scad) | Width and depth 1 to 12 LU and height 0.5 to 12 LU, all in 0.5 LU steps; 1 to 12 compartments across and front to back, equal or in typed ratios such as 2,1,1; divider height and thickness; finger scoops in the dividers; magnet opening; label holder none, small or large |
 | MultiBin shell, Standard Base | [`shells/multibin-shell/MultiBin Shell - Parametric.scad`](shells/multibin-shell/MultiBin%20Shell%20-%20Parametric.scad) | The same three sizes as the drawer that fits inside: width 1 to 12 LU, drawer height 0.5 to 12 LU (front to back as printed) and drawer depth 1 to 12 LU (height as printed), all in 0.5 LU steps; Topped Rail, Topless Rail or Simple wall on each side |
 
 Planned work for each part is in [`docs/roadmap.md`](docs/roadmap.md).
