@@ -59,7 +59,7 @@ def out_for(scad=None):
 
 # ------------------------------------------------------------------ rendering
 
-def render(command, scad, params, out):
+def render(command, scad, params, out, run=subprocess.run):
     """Run OpenSCAD once and report what it did. Every render of the gate and
     of this command goes through here.
 
@@ -69,7 +69,12 @@ def render(command, scad, params, out):
     Returns a dict: path (None when no file was written), seconds, and console
     and stdout, which are everything OpenSCAD wrote to standard error and to
     standard output, with each CR LF pair turned into LF and nothing else
-    changed."""
+    changed.
+
+    A render still running after policy.RENDER_LIMIT seconds is stopped. It
+    has no result: any file it had written is deleted, path is None, and a line
+    saying it was stopped is added after what it had printed. run is
+    subprocess.run; only the tests pass another."""
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():
@@ -78,9 +83,17 @@ def render(command, scad, params, out):
     for k, v in params.items():
         args += ["-D", f"{k}={v}"]
     t0 = time.time()
-    r = subprocess.run(args, capture_output=True, timeout=3600)
+    try:
+        r = run(args, capture_output=True, timeout=policy.RENDER_LIMIT)
+        console, stdout = r.stderr, r.stdout
+    except subprocess.TimeoutExpired as stopped:
+        if out.exists():
+            out.unlink()
+        note = f"render stopped after {policy.RENDER_LIMIT} s"
+        console = (stopped.stderr or b"") + b"\n" + note.encode() + b"\n"
+        stdout = stopped.stdout or b""
     return dict(path=out if out.exists() else None, seconds=time.time() - t0,
-                console=as_written(r.stderr), stdout=as_written(r.stdout))
+                console=as_written(console), stdout=as_written(stdout))
 
 
 def as_written(raw):

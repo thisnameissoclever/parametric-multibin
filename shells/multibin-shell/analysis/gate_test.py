@@ -27,6 +27,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -157,7 +158,7 @@ def test_policy():
         LIMITS=dict(bbox=0.02, vol=0.5, p99=0.05, mx=0.2),
         DRIFT=dict(bbox=0.002, vol=0.01, p99=0.002, mx=0.002),
         N_SAMPLES=50000, SAMPLE_SEED=7, P99=0.99, SOUND_VOL=0.01, CROSSING_LIMIT=1e-3, CORNER_TOL=1e-7,
-        BARY_TOL=1e-10, MERGE_TOLS=(1e-5, 1e-4), EXPORT_FORMAT=("--export-format", "binstl"),
+        BARY_TOL=1e-10, MERGE_TOLS=(1e-5, 1e-4), EXPORT_FORMAT=("--export-format", "binstl"), RENDER_LIMIT=3600,
         CONSOLE_STATISTICS=(
             r"Geometries in cache: [0-9]+",
             r"Geometry cache size in bytes: [0-9]+",
@@ -305,6 +306,28 @@ def test_decisions():
     check("a render absent from the baseline fails", regress.lock_failures("n", a, "absent"))
     check("an empty baseline entry fails", regress.lock_failures("n", a, {}))
     check("a baseline entry with no shape locked fails", regress.lock_failures("n", a, dict(volume=a["volume"])))
+    unusable = lambda what: [f"n: baseline entry has no usable {what}; relock to cover it"]     # noqa: E731
+    for gone in ("volume", "extents"):
+        check(f"a baseline entry without its {gone} fails and says so",
+              regress.lock_failures("n", a, {k: v for k, v in a.items() if k != gone}) == unusable(gone))
+    check("a baseline entry with only its digest names both things it lacks",
+          regress.lock_failures("n", a, dict(digest=a["digest"])) == unusable("volume or extents"))
+    huge = 10 ** 400        # valid JSON, and too large to be a floating-point number
+    for bad in (None, "1.0", nan, float("inf"), True, [1.0], huge):
+        check(f"a baseline volume of {str(bad)[:12]!r} fails as unusable",
+              regress.lock_failures("n", a, dict(a, volume=bad)) == unusable("volume"))
+    check("a baseline volume written as a whole number is usable",
+          not regress.lock_failures("n", dict(a, volume=5.0), dict(a, volume=5)))
+    for bad in (None, "0.0", nan, True, huge):
+        found = regress.drift_failures("K", zero, dict(zero, p99=bad))
+        check(f"a locked metric of {str(bad)[:12]!r} fails as having no locked value",
+              found == ["K: DRIFT p99: no locked value in the baseline"])
+    for bad in (None, [], a["extents"][:2], a["extents"] + [1.0], a["extents"][:2] + ["x"], a["extents"][:2] + [nan], "abc", 3.0):
+        check(f"baseline extents of {bad!r} fail as unusable",
+              regress.lock_failures("n", a, dict(a, extents=bad)) == unusable("extents"))
+    check("extents read as a tuple of three numbers are usable", not regress.lock_failures("n", a, dict(a, extents=tuple(a["extents"]))))
+    found = regress.lock_failures("n", dict(a, volume=nan), dict(a))
+    check("a render whose own volume is not a number fails the lock", len(found) == 1 and "(volume;" in found[0])
     check("relocking ignores the baseline", not regress.lock_failures("n", a, None))
 
     # coverage: a reference is reported once, as a missing file or as absent from the baseline
@@ -640,6 +663,81 @@ def test_render():
         r = compare.render(STUB, "gen.scad", {}, folder / "new" / "b.stl")
     check("a render makes its output folder", r["path"] == folder / "new" / "b.stl")
 
+    # a render stopped at the time limit: a stand-in for subprocess.run writes half a file and then runs out of time
+    asked = {}
+
+    def late(args, **kw):
+        asked.update(kw)
+        Path(args[args.index("-o") + 1]).write_text("half a file", encoding="utf-8")
+        raise subprocess.TimeoutExpired(args, kw.get("timeout", 0), output=b"some out\r\n", stderr=b"some text\r\n")
+
+    def silent(args, **kw):
+        raise subprocess.TimeoutExpired(args, kw.get("timeout", 0))
+
+    def finished_printing(args, **kw):
+        raise subprocess.TimeoutExpired(args, kw.get("timeout", 0), stderr=STATISTICS.replace("\n", "\r\n").encode())
+
+    def broken(args, **kw):
+        raise OSError("no such program")
+    said = f"render stopped after {policy.RENDER_LIMIT} s\n"
+    r = compare.render(STUB, "gen.scad", {}, out, run=late)
+    check("a render stopped at the time limit returns no path and deletes what it had written",
+          r["path"] is None and not out.exists())
+    check("a stopped render says so after what it had printed, and keeps what it wrote to standard output",
+          r["console"] == "some text\n\n" + said and r["stdout"] == "some out\n")
+    check("every render runs under the policy's time limit, with both streams captured",
+          asked == dict(capture_output=True, timeout=policy.RENDER_LIMIT))
+    r = compare.render(STUB, "gen.scad", {}, out, run=silent)
+    check("a stopped render that printed nothing still says it was stopped",
+          r["path"] is None and r["console"] == "\n" + said and r["stdout"] == "")
+    r = compare.render(STUB, "gen.scad", {}, out, run=finished_printing)
+    check("a render stopped after printing a whole clean console text still fails the console comparison",
+          r["console"] == STATISTICS + "\n" + said and regress.console_failures("K", r["console"], r["stdout"], ()))
+    try:
+        compare.render(STUB, "gen.scad", {}, out, run=broken)
+        kept = False
+    except OSError:
+        kept = True
+    except Exception:
+        kept = False
+    check("an error that is not the time limit is not taken for a stopped render", kept)
+
+    # the path of OpenSCAD: its Windows console wrapper, openscad.com, is replaced by the program beside it.
+    # shutil.which is replaced here by a lookup that knows only this folder, so the machine's own PATH plays no part
+    tools = folder / "tools"
+    tools.mkdir(exist_ok=True)
+    for name in ("openscad.com", "openscad.exe", "alone.com"):
+        (tools / name).write_text("", encoding="utf-8")
+    wrapper, exe = str(tools / "openscad.com"), str(tools / "openscad.exe")
+    on_path = {"openscad": str(tools / "openscad.COM"), "openscad.com": wrapper, "elsewhere": exe}
+    paths = compare.mbpaths
+    program = paths.program_not_wrapper
+    saved = paths._local, paths.shutil.which, os.environ.pop("OPENSCAD", None)
+    try:
+        paths._local = lambda: {}
+        paths.shutil.which = lambda name: on_path.get(str(name)) or (str(name) if Path(str(name)).is_file() else None)
+        check("a path to OpenSCAD's console wrapper becomes the program beside it",
+              program(tools / "openscad.com") == exe and program(str(tools / "openscad.COM")) == exe)
+        check("a bare wrapper name, and a bare name that PATH resolves to the wrapper, become the program",
+              program("openscad.com") == exe and program("openscad") == exe)
+        check("a wrapper with no program beside it, the program itself and a name PATH does not know are kept as given",
+              program(tools / "alone.com") == str(tools / "alone.com") and program(exe) == exe
+              and program("nowhere.com") == "nowhere.com" and program("other") == "other")
+        check("a name that PATH resolves to something that is not a wrapper is kept as given, not as its looked-up path",
+              program("elsewhere") == "elsewhere")
+        check("a console wrapper found on PATH is replaced by the program", paths._openscad() == exe)
+        on_path.clear()
+        paths._local = lambda: dict(openscad=wrapper)
+        check("a console wrapper named in local-paths.json is replaced by the program", paths._openscad() == exe)
+        paths._local = lambda: {}
+        os.environ["OPENSCAD"] = wrapper
+        check("a console wrapper named in the OPENSCAD variable is replaced by the program", paths._openscad() == exe)
+    finally:
+        paths._local, paths.shutil.which = saved[0], saved[1]
+        os.environ.pop("OPENSCAD", None)
+        if saved[2] is not None:
+            os.environ["OPENSCAD"] = saved[2]
+
 
 def test_real_steps():
     """The real run's own steps, on small inputs: the stand-ins in FakeSteps
@@ -848,6 +946,8 @@ def faults_table():
         return f"soundness/{name}.3mf"
     lacking = lambda kind, name: (lambda b: dict(b, **{kind: {k: v for k, v in b[kind].items() if k != name}}))  # noqa: E731
     holding = lambda kind, name, entry: (lambda b: dict(b, **{kind: dict(b[kind], **{name: entry})}))            # noqa: E731
+    without = lambda kind, name, key: (lambda b: holding(kind, name, {k: v for k, v in b[kind][name].items() if k != key})(b))  # noqa: E731
+    having = lambda kind, name, key, value: (lambda b: holding(kind, name, dict(b[kind][name], **{key: value}))(b))            # noqa: E731
     nan = float("nan")
     return [
         # check, label, texts, blocks a relock, step faults, baseline change
@@ -893,6 +993,11 @@ def faults_table():
          True, dict(measure={r[7]: dict(samples=[policy.N_SAMPLES, 500])}), None),
         ("drift", "a reference worse than its locked value", [f"{r[8]}: DRIFT mx"],
          False, dict(measure={r[8]: dict(mx=(0.003, 0.0))}), None),
+        # these two share a reference with a shape fault further down: a locked measure and a locked shape are judged apart
+        ("drift", "a reference whose locked measure is null", [f"{r[11]}: DRIFT p99: no locked value"],
+         False, {}, having("models", r[11], "p99", None)),
+        ("drift", "a reference whose locked measure is a text", [f"{r[12]}: DRIFT bbox: no locked value"],
+         False, {}, having("models", r[12], "bbox", "0.0")),
         ("mesh soundness", "an unsound reference", [f"{r[9]}: mesh not a clean single shell: not watertight"],
          True, dict(audit={f"{r[9]}.stl": dict(watertight=False)}), None),
         ("mesh soundness", "an unsound configuration", [f"{conf('half_h_2x1.5x2')}: mesh not a clean single shell: 2 bodies"],
@@ -911,6 +1016,12 @@ def faults_table():
          False, {}, holding("soundness", "mixed_walls_2x2x1", None)),
         ("shape lock", "a configuration whose baseline entry is empty", [f"{conf('simple_2x1x2')}: absent from baseline"],
          False, {}, holding("soundness", "simple_2x1x2", {})),
+        ("shape lock", "a configuration whose baseline entry has no volume",
+         [f"{conf('long_1x12x1')}: baseline entry has no usable volume"],
+         False, {}, without("soundness", "long_1x12x1", "volume")),
+        ("shape lock", "a configuration whose baseline entry has no extents",
+         [f"{conf('topless_half_2.5x1.5x1.5')}: baseline entry has no usable extents"],
+         False, {}, without("soundness", "topless_half_2.5x1.5x1.5", "extents")),
         ("shape lock", "a configuration's changed vertices", [f"{conf('tall_1x1x12')}: geometry changed vs baseline (vertices;"],
          False, dict(audit={f"{conf('tall_1x1x12')}.stl": dict(digest="x")}), None),
         ("shape lock", "a configuration whose vertices and volume both changed",
@@ -1074,6 +1185,29 @@ def test_checks():
             code, failures, steps = gate_run(old, update=True)
             check(f"[relock rules] a relock refuses to replace a {kind} entry that is {entry} without --accept-drift",
                   code == 1 and steps.written is None and has(failures, [f"{label}: absent from baseline", "--accept-drift"]))
+        for gone in ("volume", "extents"):
+            part = {k: v for k, v in locked[kind][name].items() if k != gone}
+            old = dict(locked, **{kind: dict(locked[kind], **{name: part})})
+            code, failures, steps = gate_run(old, update=True)
+            check(f"[relock rules] a relock refuses to replace a {kind} entry without its {gone} without --accept-drift",
+                  code == 1 and steps.written is None
+                  and has(failures, [f"{label}: baseline entry has no usable {gone}", "--accept-drift"]))
+            code, failures, steps = gate_run(old, update=True, accept=True)
+            check(f"[relock rules] a relock with --accept-drift replaces a {kind} entry without its {gone}",
+                  code == 0 and steps.written is not None and gone in steps.written[kind][name])
+    for bad in (None, "0.0", 10 ** 400):
+        old = dict(locked, models=dict(locked["models"], **{ref: dict(locked["models"][ref], mx=bad)}))
+        lines = []
+        code, failures, steps = gate_run(old, log=lines)
+        check(f"[drift] a plain run fails, without stopping, on a locked measure of {str(bad)[:8]!r}, and its log shows no difference for it",
+              code == 1 and has(failures, [f"{ref}: DRIFT mx: no locked value"]) and len(steps.calls) == len(clean_run.calls)
+              and any(ln.startswith(ref) and "mx=0.0000(+nan)" in ln for ln in lines))
+        code, failures, steps = gate_run(old, update=True)
+        check(f"[relock rules] a relock refuses to replace a locked measure of {str(bad)[:8]!r} without --accept-drift",
+              code == 1 and steps.written is None and has(failures, [f"{ref}: DRIFT mx: no locked value", "--accept-drift"]))
+        code, failures, steps = gate_run(old, update=True, accept=True)
+        check(f"[relock rules] a relock with --accept-drift replaces a locked measure of {str(bad)[:8]!r}",
+              code == 0 and steps.written is not None and steps.written["models"][ref]["mx"] == 0.0)
     covered.add("relock rules")
 
     check("every check in regress.CHECKS has a test through run()", covered == set(regress.CHECKS))

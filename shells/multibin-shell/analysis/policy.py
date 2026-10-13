@@ -41,6 +41,9 @@ MERGE_TOLS = (1e-5, 1e-4)
 # STL renders are binary, which keeps 32-bit coordinates. OpenSCAD's default
 # ASCII STL keeps six significant digits, 0.001 mm beyond 100 mm from the origin
 EXPORT_FORMAT = ("--export-format", "binstl")
+# seconds one render may run. A render still running then is stopped and counts
+# as a render that wrote no file
+RENDER_LIMIT = 3600
 # What OpenSCAD 2021.01 prints on standard error for a clean render of one
 # solid, line by line and in this order, each as a pattern the whole line must
 # match: cache and timing statistics, then the summary, which says the result
@@ -65,7 +68,8 @@ CONSOLE_STATISTICS = (
 
 RULES = dict(LIMITS=LIMITS, DRIFT=DRIFT, N_SAMPLES=N_SAMPLES, SAMPLE_SEED=SAMPLE_SEED, P99=P99,
              SOUND_VOL=SOUND_VOL, CROSSING_LIMIT=CROSSING_LIMIT, CORNER_TOL=CORNER_TOL, BARY_TOL=BARY_TOL,
-             MERGE_TOLS=MERGE_TOLS, EXPORT_FORMAT=EXPORT_FORMAT, CONSOLE_STATISTICS=CONSOLE_STATISTICS)
+             MERGE_TOLS=MERGE_TOLS, EXPORT_FORMAT=EXPORT_FORMAT, RENDER_LIMIT=RENDER_LIMIT,
+             CONSOLE_STATISTICS=CONSOLE_STATISTICS)
 
 # ------------------------------------------------------------------ shell coverage
 

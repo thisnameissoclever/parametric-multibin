@@ -18,6 +18,7 @@ Usage:
 """
 
 import json
+import math
 import os
 import re
 import subprocess
@@ -102,12 +103,22 @@ def stopped_with(console, error):
     return f'"{error}"' in console
 
 
+def is_number(x):
+    """A finite number. True and False are not numbers here, nor is a whole
+    number too large to be a floating-point one."""
+    try:
+        return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+    except OverflowError:
+        return False
+
+
 def drift_failures(key, now, was):
     """A reference metric worse than its locked value by more than the drift
-    tolerance, or with no locked value to compare with."""
+    tolerance, or with no locked value, or none that is a number, to compare
+    with."""
     out = []
     for field, tol in DRIFT.items():
-        if field not in was:
+        if not is_number(was.get(field)):
             out.append(f"{key}: DRIFT {field}: no locked value in the baseline")
             continue
         if not now[field] - was[field] <= tol:
@@ -153,16 +164,25 @@ def soundness_failures(label, a):
 def lock_failures(label, a, was):
     """A render that is not in the baseline, or whose shape changed since the
     baseline was locked (was is None when relocking). The vertex digest and
-    the volume are judged separately: either one changing is a change."""
+    the volume are judged separately: either one changing is a change. A
+    baseline entry without its digest counts as absent. One whose volume is
+    not a number, or whose extents are not three numbers, fails as well, and
+    so does a render whose own volume is not a number."""
     if was is None:
         return []
     if was == "absent" or "digest" not in was:
         return [f"{label}: absent from baseline; relock to cover it"]
+    extents = was.get("extents")
+    unusable = [k for k, ok in (("volume", is_number(was.get("volume"))),
+                                ("extents", isinstance(extents, (list, tuple)) and len(extents) == 3
+                                 and all(is_number(x) for x in extents))) if not ok]
+    if unusable:
+        return [f"{label}: baseline entry has no usable {' or '.join(unusable)}; relock to cover it"]
     dv = a["volume"] - was["volume"]
     changed = []
     if a["digest"] != was["digest"]:
         changed.append("vertices")
-    if abs(dv) > policy.SOUND_VOL:
+    if not abs(dv) <= policy.SOUND_VOL:
         changed.append("volume")
     if changed:
         de = max(abs(x - y) for x, y in zip(a["extents"], was["extents"]))
@@ -388,7 +408,8 @@ def run(steps, scad, update=False, accept=False, alternate=False, log=print):
             was = models[key]
             failures += drift_failures(key, m, was)
             failures += lock_failures(key, a, was)
-            log(f"{key:6} " + "  ".join(f"{f}={m[f]:.4f}({m[f] - was.get(f, float('nan')):+.4f})" for f in DRIFT))
+            locked = {f: was[f] if is_number(was.get(f)) else float("nan") for f in DRIFT}
+            log(f"{key:6} " + "  ".join(f"{f}={m[f]:.4f}({m[f] - locked[f]:+.4f})" for f in DRIFT))
 
     log("=" * 78)
     log("CONFIGURATIONS WITHOUT A REFERENCE (mesh audit, and the locked vertex digest and volume)")

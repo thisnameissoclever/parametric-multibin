@@ -93,7 +93,8 @@ The first shell generator covers the Standard Base with the Topped Rail, Topless
 - **[C1] Other base types.** MultiBuild also publishes the Standard Click-In Extension, Universal Click-In Extension and Baseless Extension bases; the extensions add a Shell Position choice of Edge or Center. Each needs its own reference set.
 - **[C4] Micro and Shell Rings walls.** Not yet inspected.
 - **[C8] A drawer depth of 0.5 LU.** One of MultiBuild's rail files is named for a 0.5 LU bin, which suggests shells that shallow exist. No shell reference at that depth is in hand to rebuild from, and the drawer generator's depth also starts at 1 LU.
-- **[C7] Render time on MakerWorld.** MakerWorld's Parametric Model Maker may stop a render that runs too long, and its limit is not known. Test the default shell there once the first version has merged. If it times out, add a faster, less exact detail option; the threaded holes dominate render time, so they are the first candidate.
+- **[C7] Render time on MakerWorld.** MakerWorld's Parametric Model Maker may stop a render that runs too long, and its limit is not known. Test the default shell there once the first version has merged. If it times out, add a faster, less exact detail option; the threads of the holes took 24 to 37 % of the render time at the three sizes measured, so they are the first candidate.
+- **[C9] Test print of a 25 x 25 mm pad.** A shell with a half LU in both width and front-to-back size has one 25 x 25 mm pad. Its single threaded hole has four clip pockets around it, the nearest 1.0 mm away. The walls are no thinner than published ones: each hole of MultiBuild's own 1 x 1 x 1 shell has three clip pockets around it, the nearest 0.95 mm away. What no published shell has is a hole with four clip pockets. Print a 1.5 x 1.5 x 1 shell and check that the hole holds its bolt; if it does not, take the corner pockets off that pad.
 
 Decided against for now:
 
