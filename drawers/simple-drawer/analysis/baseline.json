@@ -32,7 +32,7 @@
     },
     "c212": {
       "bbox": 7.105427357601002e-15,
-      "vol": 0.003936962688539406,
+      "vol": 0.003936962688576523,
       "p99": 0.0012824030162212725,
       "mx": 0.011284813451532781,
       "watertight": true,
@@ -52,9 +52,19 @@
     },
     "L323": {
       "bbox": 1.4210854715202004e-14,
-      "vol": 0.0018467742660158333,
+      "vol": 0.0018467742660591199,
       "p99": 0.0008174250167006947,
       "mx": 0.011210069603107595,
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0
+    },
+    "L332": {
+      "bbox": 0.0,
+      "vol": 0.001784302919111491,
+      "p99": 0.0006849521445202887,
+      "mx": 0.011284813451532781,
       "watertight": true,
       "bodies": 1,
       "bad_edges": 0,
@@ -72,7 +82,7 @@
     },
     "c3135": {
       "bbox": 7.105427357601002e-15,
-      "vol": 0.004186571714355027,
+      "vol": 0.004186571714222582,
       "p99": 0.0012735618757655643,
       "mx": 0.1333358764648409,
       "watertight": true,
@@ -81,9 +91,7 @@
       "dup_faces": 0
     }
   },
-  "missing_at_lock": [
-    "L332"
-  ],
+  "missing_at_lock": [],
   "soundness": {
     "plain_1x1x1": {
       "watertight": true,
@@ -204,6 +212,150 @@
         30.5
       ],
       "volume": 28547.7
+    },
+    "ratios_w_2_1_1": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        143.0,
+        107.0,
+        43.0
+      ],
+      "volume": 58727.899
+    },
+    "ratios_d_1_2_pad": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        93.0,
+        157.0,
+        43.0
+      ],
+      "volume": 53881.859
+    },
+    "ratios_grid_4x3": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        143.0,
+        157.0,
+        93.0
+      ],
+      "volume": 169404.322
+    },
+    "ratios_bad_text": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        93.0,
+        107.0,
+        43.0
+      ],
+      "volume": 43283.43
+    },
+    "ratios_sliver": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        43.0,
+        57.0,
+        43.0
+      ],
+      "volume": 14879.304
+    },
+    "scoop_front_grid": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        93.0,
+        107.0,
+        43.0
+      ],
+      "volume": 47523.953
+    },
+    "scoop_center_grid": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        93.0,
+        107.0,
+        43.0
+      ],
+      "volume": 46389.682
+    },
+    "scoop_center_deep": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        143.0,
+        107.0,
+        93.0
+      ],
+      "volume": 103682.05
+    },
+    "scoop_front_short_row": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        93.0,
+        107.0,
+        43.0
+      ],
+      "volume": 43258.307
+    },
+    "thin_dividers_0.6": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        93.0,
+        107.0,
+        43.0
+      ],
+      "volume": 43624.797
+    },
+    "thick_dividers_3": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        143.0,
+        107.0,
+        93.0
+      ],
+      "volume": 194400.461
+    },
+    "thick_dividers_omitted": {
+      "watertight": true,
+      "bodies": 1,
+      "bad_edges": 0,
+      "dup_faces": 0,
+      "extents": [
+        43.0,
+        57.0,
+        43.0
+      ],
+      "volume": 18988.762
     }
   }
 }

@@ -69,6 +69,44 @@ SOUNDNESS = [
     ("tall_narrow_1x3x1", dict(width_lu=1, height_lu=3, depth_lu=1)),
     ("offgrid_h_0.75",    dict(width_lu=2, height_lu=0.75, depth_lu=2,
                                label='"large"', magnet="true")),
+    # Uneven compartments: ratios for the columns, for the rows (padded with the
+    # last number given), and for both on a grid; then text that is not a list of
+    # positive numbers and ratios that would leave a sliver, which both fall back
+    # to equal sections.
+    ("ratios_w_2_1_1",    dict(width_lu=3, height_lu=1, depth_lu=2,
+                               width_sections=3, width_ratios='"2,1,1"')),
+    ("ratios_d_1_2_pad",  dict(width_lu=2, height_lu=1, depth_lu=3,
+                               depth_sections=3, depth_ratios='"1,2"')),
+    ("ratios_grid_4x3",   dict(width_lu=3, height_lu=2, depth_lu=3,
+                               width_sections=4, depth_sections=3,
+                               width_ratios='"1,2,3,1.5"', depth_ratios='"3,1,2"')),
+    ("ratios_bad_text",   dict(width_lu=2, height_lu=1, depth_lu=2,
+                               width_sections=2, depth_sections=2,
+                               width_ratios='"2,x"', depth_ratios='"0,1"')),
+    ("ratios_sliver",     dict(width_lu=1, height_lu=1, depth_lu=1,
+                               width_sections=2, width_ratios='"100,1"')),
+    # Finger scoops: the front slope and the centre notches on a grid; a deep
+    # scoop that low dividers and short stretches must reduce; and a front slope
+    # that a depth divider close to the front wall must shorten.
+    ("scoop_front_grid",  dict(width_lu=2, height_lu=1, depth_lu=2,
+                               width_sections=3, depth_sections=2, divider_scoop='"front"')),
+    ("scoop_center_grid", dict(width_lu=2, height_lu=1, depth_lu=2,
+                               width_sections=3, depth_sections=2, divider_scoop='"center"')),
+    ("scoop_center_deep", dict(width_lu=3, height_lu=2, depth_lu=2,
+                               width_sections=4, depth_sections=3, divider_height_lu=1,
+                               divider_scoop='"center"', divider_scoop_mm=40)),
+    ("scoop_front_short_row", dict(width_lu=2, height_lu=1, depth_lu=2,
+                                   width_sections=2, depth_sections=2, depth_ratios='"1,9"',
+                                   divider_scoop='"front"', divider_scoop_mm=20)),
+    # Divider thickness: the thinnest; thick ones beside a magnet wall, notched;
+    # and more thick dividers than the width holds, which are left out.
+    ("thin_dividers_0.6", dict(width_lu=2, height_lu=1, depth_lu=2,
+                               width_sections=3, depth_sections=2, divider_thickness=0.6)),
+    ("thick_dividers_3",  dict(width_lu=3, height_lu=2, depth_lu=2,
+                               width_sections=3, depth_sections=2, divider_thickness=3,
+                               magnet="true", divider_scoop='"center"')),
+    ("thick_dividers_omitted", dict(width_lu=1, height_lu=1, depth_lu=1,
+                                    width_sections=12, depth_sections=2, divider_thickness=4)),
 ]
 
 

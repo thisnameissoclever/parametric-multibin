@@ -5,7 +5,6 @@ Planned work for the generators, with the agreed design wherever one exists. Eac
 ## Contents
 
 - [Simple drawer](#simple-drawer)
-  - [Next drawer iteration](#next-drawer-iteration)
   - [Accepted, design still to do](#accepted-design-still-to-do)
   - [Parked: embossed faceplate text](#parked-embossed-faceplate-text)
   - [Considered and not planned](#considered-and-not-planned)
@@ -14,53 +13,9 @@ Planned work for the generators, with the agreed design wherever one exists. Eac
 
 ## Simple drawer
 
-### Next drawer iteration
-
-These three start after the shell generator is signed off, in this order. The designs below were proposed in discussion and are the plan of record; Tim confirms them before implementation starts. Every change must keep the regression gate in `drawers/simple-drawer/analysis/regress.py` passing with the new parameters at their defaults, and each new parameter needs at least one non-default row in that gate's soundness list.
-
-#### [P2] Uneven compartment sizes
-
-Two free-text parameters in the Compartments section:
-
-```
-width_ratios = "";  // blank = equal
-depth_ratios = "";
-```
-
-The usable cavity, total width minus the dividers' own thickness, is split in proportion to the numbers given. `2,1,1` on three width sections gives a first column twice as wide as each of the other two. `width_ratios` reads left to right; `depth_ratios` reads front to back, as you look into the drawer.
-
-Input handling, so odd input never produces broken geometry:
-
-- Fewer numbers than sections: pad with the last value given, so a single number always means equal sizes.
-- More numbers than sections: ignore the extras.
-- Blank, unparseable, or any value that is zero or negative: fall back to equal sizes and echo a warning.
-
-OpenSCAD 2021.01 has no string-to-number function, so the generator carries a small parser built from `search()` and string indexing. The tested version is `drawers/simple-drawer/analysis/probe/parse_test.scad`. A text field is used instead of sliders because the Customizer can only show numeric vectors of up to four elements, and the drawer allows twelve sections.
-
-Depth dividers must keep the measured placement rule: each divider's back face sits on its division line, as in the originals.
-
-The front-bottom fillet cut is placed from the 50 mm cell boundaries, not from the divider positions (deviation D5), so uneven dividers do not move it. The comment above `divider_x()` currently says the opposite; correct it in the same change.
-
-#### [P3] Divider finger scoops
-
-```
-divider_scoop = "none"; // [none, front, center]
-divider_scoop_mm = 10;  // [2:1:40]
-```
-
-`front` ramps the top of each width divider down toward the front of the drawer, continuing the front wall's scoop inward. `center` cuts a notch in the middle of each divider's run so a finger can reach into a narrow cell. Both cuts have 45-degree walls and remove material from the top only, so they add no overhangs. `front` applies to width dividers only, because a depth divider runs side to side and has no front end; `center` applies to both.
-
-#### [P11] Divider thickness
-
-```
-divider_thickness = 1.0; // [0.6:0.1:4]
-```
-
-Replaces the fixed `div_t = 1.0`. The end flares and the depth-divider placement already derive from `div_t`. Below 0.6 mm a divider is less than two extrusion widths of a 0.4 mm nozzle. If the resulting compartment width drops under 2 mm, echo a warning instead of producing a sliver.
-
 ### Accepted, design still to do
 
-- **[P4] Skip individual dividers.** A mask such as `1,1,0` omits a divider so two cells merge. Combines with [P2] uneven compartment sizes.
+- **[P4] Skip individual dividers.** A mask such as `1,1,0` omits a divider so two cells merge. Combines with the uneven compartment sizes of `width_ratios` and `depth_ratios`.
 - **[P6] One label frame per compartment.** For a divided drawer, a small frame over each column instead of one large frame. This changes the faceplate, so it must default to off and needs the full reference comparison, not only the soundness checks.
 - **[P8] Sloped floor.** The interior floor tilts a few degrees toward the front so small parts collect under the scoop.
 

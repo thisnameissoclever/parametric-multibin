@@ -20,8 +20,18 @@ height_lu = 1; // [0.5:0.5:12]
 width_sections = 1; // [1:12]
 // Number of depth-wise sections (rows)
 depth_sections = 1; // [1:12]
+// Relative widths of the columns, left to right as you face the label, such as 2,1,1. Blank means equal
+width_ratios = "";
+// Relative depths of the rows, front to back, such as 1,2. Each row is counted with the divider behind it. Blank means equal
+depth_ratios = "";
 // Divider height in LU (clamped to the wall height)
 divider_height_lu = 12; // [0.5:0.5:12]
+// Divider thickness in mm
+divider_thickness = 1.0; // [0.6:0.1:4]
+// Finger scoop in the tops of the dividers. front slopes each width divider down toward the label end; center notches every divider between crossings
+divider_scoop = "none"; // [none, front, center]
+// Depth of the scoop in mm (reduced where a divider is too low or a compartment too short for it)
+divider_scoop_mm = 10; // [2:1:40]
 
 /* [Features] */
 // Magnet pocket(s) in the back wall (thickens the back wall to 4 mm)
@@ -68,7 +78,7 @@ side_ch   = 4.686;              // interior side-wall floor chamfer leg
 bot_ch    = 5.272;              // outer side bottom chamfer leg
 frt_r     = 7;                  // outer front-bottom fillet radius
 brace_len = min(8*H + 2, U*D - 5);  // corner brace flange length, clamped to the depth
-div_t     = 1.0;                // divider thickness
+div_t     = min(4, max(0.6, divider_thickness));   // divider thickness (1.0 on the originals)
 div_top   = min(WT, U*divider_height_lu - 12.272); // divider top height
 
 n_cells = max(1, floor(W + eps));                 // full 50 mm cells across the width
@@ -78,13 +88,100 @@ cell_b  = n_cells < 2 ? [] :
 
 n_grooves = max(0, floor((WT - 3) / U + eps));    // internal 50 mm height boundaries
 
-// Left-hand X face of every width divider. Both the dividers themselves and the
-// front-bottom fillet cut read this, so they cannot drift apart.
+// ---- compartment sizes typed as text, such as "2,1,1"
+// OpenSCAD 2021.01 has no string-to-number function, so the numbers are read
+// one character at a time. A list is numbers separated by commas, with spaces
+// allowed around each; anything else makes the whole text unusable.
+function _digit(c) = let (h = search(c, "0123456789")) len(h) == 0 ? -1 : h[0];
+function _blank(s, i = 0) = i >= len(s) ? true : s[i] != " " ? false : _blank(s, i + 1);
+// index of the next comma at or after i, or the end of the text
+function _field_end(s, i) = i >= len(s) || s[i] == "," ? i : _field_end(s, i + 1);
+// the number written in s from i up to j, or undef if that stretch is not one number
+function _number(s, i, j, acc = 0, scale = 0, digits = 0, done = false) =
+    i >= j ? (digits > 0 ? acc : undef) :
+    let (c = s[i], d = _digit(c))
+    c == " " ? _number(s, i + 1, j, acc, scale, digits, digits > 0 || scale != 0) :
+    done ? undef :
+    d >= 0 ? (scale == 0 ? _number(s, i + 1, j, acc*10 + d, 0, digits + 1)
+                         : _number(s, i + 1, j, acc + d*scale, scale/10, digits + 1)) :
+    c == "." && scale == 0 ? _number(s, i + 1, j, acc, 0.1, digits) :
+    undef;
+// every number of a comma-separated list, or undef if any field is not a number
+function _numbers(s, i = 0, out = []) =
+    let (j = _field_end(s, i), v = _number(s, i, j))
+    v == undef ? undef :
+    j >= len(s) ? concat(out, [v]) : _numbers(s, j + 1, concat(out, [v]));
+function _sum(v, n, i = 0) = i >= n ? 0 : v[i] + _sum(v, n, i + 1);   // sum of the first n values
+
+// The ratios for n sections from the typed text. [] means equal sections: a
+// blank text, or numbers that are all the same. undef means the text is not a
+// list of positive numbers; that holds for every number typed, including any
+// beyond the n-th, which are otherwise not used. Too few numbers are padded with
+// the last one given.
+function section_ratios(text, n) =
+    !is_string(text) ? undef :
+    _blank(text) ? [] :
+    let (v = _numbers(text))
+    v == undef || min(v) <= 0 ? undef :
+    let (p = [for (i = [0:1:n - 1]) v[min(i, len(v) - 1)]])
+    max(p) == min(p) ? [] : p;
+
+// A compartment narrower than this at the floor of the cavity is a sliver, and
+// is not built. Higher up a wall can stand up to 1 mm further in (the back
+// wall's lean, and the panels behind the grooves and jogs of taller drawers).
+min_cell = 2;
+cavW = (half - wall_s) - (-(half - wall_s)); // cavity width between the side walls
+cavD = (-wall_b) - (F + wall_f);            // cavity depth between the front and back walls
+
+// widths of the columns for a list of ratios ([] = equal), left to right
+function width_cells(r) =
+    let (usable = cavW - (width_sections - 1)*div_t)
+    len(r) == 0 ? [for (i = [0:1:width_sections - 1]) usable/width_sections]
+                : [for (i = [0:1:width_sections - 1]) usable*r[i]/_sum(r, width_sections)];
+// Division lines of the rows for a list of ratios ([] = equal), front to back.
+// The originals place each depth divider with its BACK face on its division
+// line (g212 measured), so a divider takes its thickness from the row in front
+// of the line, and with equal ratios every row but the back one is one divider
+// thickness shorter than the back one.
+function depth_lines(r) =
+    let (cavB = -wall_b, cavF = F + wall_f)
+    len(r) == 0 ? [for (k = [1:1:depth_sections - 1]) cavB - (depth_sections - k)*(cavD/depth_sections)]
+                : [for (k = [1:1:depth_sections - 1]) cavF + cavD*_sum(r, k)/_sum(r, depth_sections)];
+// clear depths of the rows, front to back
+function depth_cells(r) =
+    let (cavB = -wall_b, cavF = F + wall_f, y = depth_lines(r), n = depth_sections)
+    [for (k = [0:1:n - 1]) (k == n - 1 ? cavB : y[k] - div_t) - (k == 0 ? cavF : y[k - 1])];
+
+w_typed = section_ratios(width_ratios, width_sections);
+d_typed = section_ratios(depth_ratios, depth_sections);
+// ratios that would leave a sliver are dropped for equal sections
+w_ratio = (w_typed == undef || min(width_cells(w_typed)) < min_cell) ? [] : w_typed;
+d_ratio = (d_typed == undef || min(depth_cells(d_typed)) < min_cell) ? [] : d_typed;
+// dividers are left out altogether when even equal sections would be slivers
+w_div = width_sections > 1 && min(width_cells(w_ratio)) >= min_cell;
+d_div = depth_sections > 1 && min(depth_cells(d_ratio)) >= min_cell;
+
+if (w_typed == undef)
+    echo("WARNING: width_ratios is not a list of positive numbers such as 2,1,1; using equal widths.");
+else if (w_typed != w_ratio)
+    echo("WARNING: width_ratios would leave a column under 2 mm wide; using equal widths.");
+if (d_typed == undef)
+    echo("WARNING: depth_ratios is not a list of positive numbers such as 1,2; using equal depths.");
+else if (d_typed != d_ratio)
+    echo("WARNING: depth_ratios would leave a row under 2 mm deep; using equal depths.");
+if (width_sections > 1 && !w_div)
+    echo("WARNING: the columns would be under 2 mm wide; width dividers omitted.");
+if (depth_sections > 1 && !d_div)
+    echo("WARNING: the rows would be under 2 mm deep; depth dividers omitted.");
+
+// Left-hand X face of every width divider, left to right. The front-bottom
+// fillet cut does not read this: it is placed from the 50 mm cell boundaries
+// (deviation D5), so uneven columns do not move it.
 function divider_x() =
-    width_sections < 2 ? [] :
-    let (cavL = -(half - wall_s), cavR = half - wall_s,
-         cw = (cavR - cavL - (width_sections - 1)*div_t) / width_sections)
-    [for (i = [1:1:width_sections - 1]) cavL + i*cw + (i - 1)*div_t];
+    !w_div ? [] :
+    let (cavL = -(half - wall_s), cw = width_cells(w_ratio))
+    len(w_ratio) == 0 ? [for (i = [1:1:width_sections - 1]) cavL + i*cw[0] + (i - 1)*div_t]
+                      : [for (i = [1:1:width_sections - 1]) cavL + _sum(cw, i) + (i - 1)*div_t];
 
 label_cells = (lab_on && label == "large") ? min(2, n_cells) : 1;
 lab_win  = 13.2  + 25*(label_cells-1);  // window half width
@@ -407,8 +504,9 @@ module dividers() {
     // everything is clipped to the cavity so fillet bars cannot escape the walls
     intersection() {
     translate([cavL, cavF, 0]) cube([cavR - cavL, cavB - cavF, OH]);
+    difference() {
     union() {
-    if (width_sections > 1) {
+    if (w_div) {
         for (xl = divider_x()) {
             translate([xl, cavF, 0]) cube([div_t, cavB - cavF, div_top]);
             translate([xl, 0, 0])         divider_filletY(cavF, cavB, -1);
@@ -438,13 +536,10 @@ module dividers() {
             }
         }
     }
-    if (depth_sections > 1) {
-        // The originals place each depth divider with its BACK face on the equal
-        // division line of the cavity (g212 measured), so the front compartment
-        // is 1 mm shorter per divider than the others.
-        cd = (cavB - cavF) / depth_sections;
-        for (i = [1:1:depth_sections - 1]) {
-            yf = cavB - i*cd - div_t;           // front face of divider i
+    if (d_div) {
+        // each depth divider has its back face on its division line (see depth_lines)
+        for (line = depth_lines(d_ratio)) {
+            yf = line - div_t;                  // front face of this divider
             translate([cavL, yf, 0]) cube([cavR - cavL, div_t, div_top]);
             translate([0, yf, 0])         divider_barX(cavL, cavR, -1);
             translate([0, yf + div_t, 0]) divider_barX(cavL, cavR, 1);
@@ -457,7 +552,71 @@ module dividers() {
         }
     }
     }   // union
+    divider_scoops();
+    }   // difference
     }   // cavity clip
+}
+
+// ---- finger scoops: cuts in the tops of the dividers. Every cut has 45-degree
+// walls and removes material from the top only, so it adds no overhang. A scoop
+// never reaches down into the dividers' floor fillets.
+scoop_d = min(max(2, divider_scoop_mm), div_top - fil_cz);
+// how far the leaning back wall stands in at the height of the divider tops
+// (the magnet wall does not lean)
+back_in = mag_on ? 0 : min(1, max(0, (div_top - lean0)/(lean1 - lean0)));
+// The stretches of a width divider between crossings, front to back, each as
+// [from, to]: from the front wall or a depth divider's back face, to the next
+// depth divider's front face or the back wall where the divider tops meet it.
+function stretches_y() =
+    let (ys = d_div ? depth_lines(d_ratio) : [])
+    [for (k = [0:1:len(ys)]) [k == 0 ? F + wall_f : ys[k - 1], k == len(ys) ? -wall_b - back_in : ys[k] - div_t]];
+// the stretches of a depth divider between crossings, left to right
+function stretches_x() =
+    let (xs = divider_x())
+    [for (k = [0:1:len(xs)]) [k == 0 ? -(half - wall_s) : xs[k - 1] + div_t, k == len(xs) ? half - wall_s : xs[k]]];
+// Depth of the centre notch that fits a stretch, or 0 when none does. A notch is
+// three times as wide at the top as it is deep, and leaves 2 mm of full-height
+// divider at each end of its stretch.
+function notch_depth(s) = let (d = min(scoop_d, (s[1] - s[0] - 4)/3)) d >= 2 ? d : 0;
+// Run of the front slope, or 0 when none fits. It ends 2 mm before the end of
+// the front stretch, which is a depth divider or the back wall.
+function front_run() =
+    let (s = stretches_y()[0], r = min(scoop_d, s[1] - s[0] - 2)) r >= 2 ? r : 0;
+// outline of a notch d deep centred on m along a divider, against height; its
+// sides run on past the divider top, so no corner of the cut lies in that face
+function scoop_notch(m, d) =
+    [[m - d/2, div_top - d], [m + d/2, div_top - d], [m + 1.5*d + 1, div_top + 1], [m - 1.5*d - 1, div_top + 1]];
+
+scoop_cuts = divider_scoop == "front"  ? (w_div ? [front_run()] : []) :
+             divider_scoop == "center" ? concat(w_div ? [for (s = stretches_y()) notch_depth(s)] : [],
+                                                d_div ? [for (s = stretches_x()) notch_depth(s)] : []) : [];
+if (!(divider_scoop == "none" || divider_scoop == "front" || divider_scoop == "center"))
+    echo("WARNING: divider_scoop must be none, front or center; no scoop is cut.");
+else if (divider_scoop != "none" && (len(scoop_cuts) == 0 || max(scoop_cuts) == 0))
+    echo("NOTE: divider_scoop cuts nothing in this drawer: it has no divider long enough and tall enough for that scoop.");
+else if (divider_scoop != "none" && min(scoop_cuts) < divider_scoop_mm)
+    echo("NOTE: the divider scoop is shallower than divider_scoop_mm, or left out, where a divider is too low or a compartment too short for it.");
+
+module divider_scoops() {
+    side = 0.75;        // a cut reaches this far past a divider's faces, to take its 0.5 mm end flares with it
+    if (divider_scoop == "front" && w_div) {
+        // the top of each width divider slopes down toward the front wall
+        run = front_run();
+        cavF = F + wall_f;
+        if (run > 0) for (xl = divider_x())
+            prismX([[cavF - 1, div_top - run - 1], [cavF + run + 1, div_top + 1], [cavF - 1, div_top + 1]],
+                   xl - side, xl + div_t + side);
+    }
+    if (divider_scoop == "center") {
+        // one notch in each stretch of a divider: a flat bottom as long as the
+        // notch is deep, under 45-degree sides
+        if (w_div) for (xl = divider_x(), s = stretches_y())
+            let (d = notch_depth(s))
+            if (d > 0) prismX(scoop_notch((s[0] + s[1])/2, d), xl - side, xl + div_t + side);
+        if (d_div) for (line = depth_lines(d_ratio), s = stretches_x())
+            let (d = notch_depth(s))
+            if (d > 0) prismY(scoop_notch((s[0] + s[1])/2, d), line - div_t - side, line + side);
+    }
 }
 module divider_barX(x0, x1, dir) {
     rotate([90, 0, 90]) translate([0, 0, x0]) linear_extrude(height = x1 - x0)
